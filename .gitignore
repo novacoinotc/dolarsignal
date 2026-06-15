@@ -6,3 +6,4 @@ data/*.db
 data/*.db-*
 .vercel/
 .DS_Store
+.vercel

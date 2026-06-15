@@ -1,0 +1,27 @@
+name: Deploy worker to Railway
+
+# Auto-deploy del worker en cada push a main.
+# El dashboard (Vercel) se redeploya solo vía su propia integración de Git.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'data/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'railway.json'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar Railway CLI
+        run: npm i -g @railway/cli
+      - name: Deploy worker
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service worker --ci
