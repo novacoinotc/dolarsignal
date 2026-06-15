@@ -1,0 +1,17 @@
+{
+  "name": "dolarsignal",
+  "version": "1.0.0",
+  "description": "Bot de análisis y alertas de compra USDT/MXN con paper trading — mesa OTC",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "init-db": "node -e \"import('./src/db.js').then(m => m.initSchema()).then(() => { console.log('Schema OK'); process.exit(0); })\""
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
