@@ -71,7 +71,7 @@ const ANALYST_SCHEMA = {
 
 // SCOUT — barato, cada minuto. Devuelve si algo merece escalar a Opus.
 export async function runScout(ctx) {
-  const system = `Eres el "scout" de una mesa OTC que compra USDT/MXN ~$20M MXN al día. Tu trabajo es VIGILAR el mercado cada minuto y decidir si está pasando algo que merezca un análisis profundo del analista senior (Opus).
+  const system = `Eres el "scout" de una mesa OTC que compra USDT/MXN ~$25M MXN al día. Tu trabajo es VIGILAR el mercado cada minuto y decidir si está pasando algo que merezca un análisis profundo del analista senior (Opus).
 Marca interesting=true si ves: un dip notable (z-score bajo, RSI<35), señales STRONG_BUY recientes, una noticia de impacto real para el USD/MXN o cripto, una ventana de riesgo por evento próxima, o un movimiento brusco. Si todo está tranquilo y plano, interesting=false. Sé breve y concreto en español.`;
   const { data, usage } = await structured(CONFIG.SCOUT_MODEL, system, describeContext(ctx), SCOUT_SCHEMA, { maxTokens: 500 });
   return { ...data, usage };
@@ -79,7 +79,7 @@ Marca interesting=true si ves: un dip notable (z-score bajo, RSI<35), señales S
 
 // ANALYST — Opus, toma la decisión. Razona sobre todo el contexto.
 export async function runAnalyst(ctx, scoutNote) {
-  const system = `Eres el analista senior de una mesa OTC mexicana que compra USDT/MXN (~$20M MXN/día). Tu margen son centavos, así que cada centavo de mejor precio importa. Recibes el contexto de mercado y el reporte del scout. Da una recomendación de COMPRA accionable y razonada, en español claro y directo (sin tecnicismos innecesarios).
+  const system = `Eres el analista senior de una mesa OTC mexicana que compra USDT/MXN (~$25M MXN/día). Tu margen son centavos, así que cada centavo de mejor precio importa. Recibes el contexto de mercado y el reporte del scout. Da una recomendación de COMPRA accionable y razonada, en español claro y directo (sin tecnicismos innecesarios).
 
 Considera: el precio real RFQ (lo que de verdad pagamos), los indicadores técnicos, la correlación con BTC, las NOTICIAS (interpreta su dirección real para el USD/MXN, no solo si mencionan la Fed: una Fed "dura"/hawkish suele FORTALECER el dólar = USDT sube; recortes de tasa lo debilitan), y el calendario (no conviene cargar fuerte justo antes de un evento de alto impacto).
 

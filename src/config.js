@@ -19,7 +19,7 @@ export const CONFIG = {
   TIMEZONE: 'America/Mexico_City',
 
   // ── Fondo de paper trading ────────────────────────────────
-  DAILY_BUDGET_MXN: 20_000_000,   // presupuesto diario de compra
+  DAILY_BUDGET_MXN: 25_000_000,   // presupuesto diario de compra (venta real diaria)
   TWAP_SLOT_MINUTES: 30,          // referencia TWAP: compra cada 30 min
   SIGNAL_BUY_PCT: 0.02,           // compra por señal BUY: 2% del presupuesto diario
   STRONG_BUY_PCT: 0.05,           // compra por señal STRONG_BUY: 5%
