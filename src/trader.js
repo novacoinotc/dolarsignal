@@ -39,8 +39,14 @@ export async function onSlotCheck(now, price) {
     if (remaining < 1) continue;
     const slotsLeft = Math.max(1, Math.ceil((plan.endMin - minutes) / CONFIG.TWAP_SLOT_MINUTES));
     const evenPace = remaining / slotsLeft;
-    const pace = slotsLeft <= CATCHUP_SLOTS ? 1 : cfg.slotPace;
-    const amount = Math.min(remaining, evenPace * pace * sessionWeight(cfg, minutes));
+    let amount;
+    if (slotsLeft <= 1) {
+      amount = remaining;                                   // último slot del día/ventana: gasta TODO
+    } else if (slotsLeft <= CATCHUP_SLOTS) {
+      amount = Math.min(remaining, evenPace);               // catch-up: ritmo parejo SIN sesgo de sesión (garantiza completar)
+    } else {
+      amount = Math.min(remaining, evenPace * cfg.slotPace * sessionWeight(cfg, minutes));
+    }
     const t = await execute(name, 'slot', amount, price, null, now);
     if (t) executed.push(t);
   }

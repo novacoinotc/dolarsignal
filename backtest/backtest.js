@@ -145,13 +145,14 @@ function run(bars, btcByTs) {
           const amt = Math.min(remaining, budget * pct);
           if (amt > 0) { usdt += amt / price; mxn += amt; remaining -= amt; buys++; }
         }
-        // 2) slot de relleno
+        // 2) slot de relleno (misma lógica que el live onSlotCheck)
         const slotsLeft = valid.length - vi;
         const evenPace = remaining / slotsLeft;
-        const pace = slotsLeft <= P.CATCHUP_SLOTS ? 1 : cfg.slotPace;
         const w = cfg.session ? SESSION_W[sessionOf(min)] : 1;
-        let slot = Math.min(remaining, evenPace * pace * w);
-        if (vi === valid.length - 1) slot = remaining;   // última barra gasta todo
+        let slot;
+        if (slotsLeft <= 1) slot = remaining;                          // última barra: gasta todo
+        else if (slotsLeft <= P.CATCHUP_SLOTS) slot = Math.min(remaining, evenPace);  // catch-up sin sesgo
+        else slot = Math.min(remaining, evenPace * cfg.slotPace * w);
         if (slot > 0) { usdt += slot / price; mxn += slot; remaining -= slot; }
       }
       totals[k].mxn += mxn; totals[k].usdt += usdt; totals[k].buys += buys;
