@@ -65,8 +65,8 @@ export const CONFIG = {
   // ── Bitso RFQ (SOLO LECTURA del precio real institucional) ─
   BITSO_API_KEY: process.env.BITSO_API_KEY || '',
   BITSO_API_SECRET: process.env.BITSO_API_SECRET || '',
-  RFQ_QUOTE_MXN: Number(process.env.RFQ_QUOTE_MXN || 1_000_000), // tamaño de cotización de referencia
-  RFQ_POLL_MS: Number(process.env.RFQ_POLL_MS || 120_000),
+  RFQ_QUOTE_MXN: Number(process.env.RFQ_QUOTE_MXN || 100_000), // el RFQ no depende del tamaño; se usa un monto chico de referencia
+  RFQ_POLL_MS: Number(process.env.RFQ_POLL_MS || 30_000),       // cotiza seguido: es el precio de ejecución del paper trading
 
   // ── Dashboard local / Railway ─────────────────────────────
   PORT: Number(process.env.PORT || 8420),

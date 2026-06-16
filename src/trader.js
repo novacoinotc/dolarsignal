@@ -48,8 +48,11 @@ export async function onSlotCheck(now, price) {
 }
 
 // Compra oportunista en señal BUY / STRONG_BUY para las acumuladoras que la usan.
-export async function onSignal(signal) {
+// execPrice = precio REAL de ejecución (RFQ de Bitso); la señal se detecta con el
+// precio público pero la compra se registra al precio que de verdad pagamos.
+export async function onSignal(signal, execPrice) {
   if (signal.tier !== 'BUY' && signal.tier !== 'STRONG_BUY') return [];
+  const price = execPrice || signal.price;
   const now = signal.ts;
   const minutes = cdmxMinutes(now);
   const date = tradingDate(now);
@@ -64,7 +67,7 @@ export async function onSignal(signal) {
     const remaining = plan.budget - await spent(date, name);
     if (remaining < 1) continue;
     const amount = Math.min(plan.budget * pct, remaining);
-    const trade = await execute(name, 'signal', amount, signal.price, signal.id, now);
+    const trade = await execute(name, 'signal', amount, price, signal.id, now);
     if (trade) { lastSignalBuyTs[name] = now; executed.push(trade); }
   }
   return executed;

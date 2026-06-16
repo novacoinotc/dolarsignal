@@ -17,8 +17,12 @@ import { startServer } from './server.js';
 const NEWS_ALERT_THRESHOLD = 4; // score mínimo para alertar una noticia
 const startupTs = Date.now();
 let lastBitsoPrice = null;
+let lastRfqPrice = null;        // precio REAL al que nos vende Bitso (RFQ) — precio de ejecución
 let lastAlertedTier = null;
 let lastAlertTs = 0;
+
+// Precio de ejecución del paper trading = RFQ real; si aún no hay, usa el público
+const execPrice = () => lastRfqPrice || lastBitsoPrice;
 
 async function pollBitso() {
   try {
@@ -30,7 +34,7 @@ async function pollBitso() {
     const snapshot = await indicatorSnapshot(t.ts);
 
     if (signal) {
-      const trades = await onSignal(signal);   // todas las acumuladoras
+      const trades = await onSignal(signal, execPrice());   // ejecuta al precio RFQ real
       // Alerta si sube de tier o pasaron >10 min desde la última
       const shouldAlert = signal.tier !== lastAlertedTier || t.ts - lastAlertTs > 10 * 60_000;
       if (shouldAlert) {
@@ -40,14 +44,14 @@ async function pollBitso() {
       }
       const botTrade = trades.find(x => x.strategy === 'smart') || trades[0];
       if (botTrade) {
-        console.log(`💰 [${cdmxTime()}] ${trades.length} compras (${signal.tier}) @ ${botTrade.price.toFixed(4)}`);
+        console.log(`💰 [${cdmxTime()}] ${trades.length} compras (${signal.tier}) @ ${botTrade.price.toFixed(4)} (RFQ)`);
       }
     } else {
       lastAlertedTier = null;
     }
 
-    // Trader: compra/vende en puntos clave en cada tick
-    const action = await onTraderTick(t.ts, t.price, signal, snapshot);
+    // Trader: compra/vende en puntos clave al precio RFQ real
+    const action = await onTraderTick(t.ts, execPrice(), signal, snapshot);
     if (action) {
       console.log(`💱 [${cdmxTime()}] Trader ${action.reason.toUpperCase()}: $${action.mxn.toLocaleString('es-MX', { maximumFractionDigits: 0 })} @ ${action.price.toFixed(4)}`);
     }
@@ -65,11 +69,13 @@ async function pollBtc() {
   }
 }
 
-// Precio real institucional (RFQ de Bitso) — SOLO LECTURA, referencia
+// Precio real institucional (RFQ de Bitso) — SOLO LECTURA. Es el precio de
+// ejecución del paper trading (al que de verdad nos vende Bitso).
 async function pollRfq() {
   if (!CONFIG.BITSO_API_KEY) return;   // sin credenciales, se omite
   try {
     const t = await fetchRfq();
+    lastRfqPrice = t.price;
     await insertTick({ ts: t.ts, source: 'rfq', price: t.price });
   } catch (err) {
     console.error(`[rfq] ${err.message}`);
@@ -103,9 +109,9 @@ async function pollNews() {
 
 async function minuteTick() {
   try {
-    const trades = await onSlotCheck(Date.now(), lastBitsoPrice);
+    const trades = await onSlotCheck(Date.now(), execPrice());   // slots al precio RFQ real
     if (trades.length) {
-      console.log(`🕐 [${cdmxTime()}] Slots: ${trades.length} estrategias compraron @ ${trades[0].price.toFixed(4)}`);
+      console.log(`🕐 [${cdmxTime()}] Slots: ${trades.length} estrategias compraron @ ${trades[0].price.toFixed(4)} (RFQ)`);
     }
     await evaluateOutcomes();
   } catch (err) {
