@@ -27,13 +27,22 @@ const SESSION_WEIGHT = { europea: 1.3, americana: 1.4, otros: 0.5 };
 //  sessionAware  pondera el relleno por sesión (más en europea/americana)
 //  fridayPreload pre-carga el fin de semana el viernes antes del cutoff
 export const ACCUMULATORS = {
+  // ── Mecánicas: disparan compras oportunistas con las señales matemáticas ──
   twap:        { label: 'Pareja (TWAP)', color: '#8b949e', slotPace: 1.0, signalBuyPct: 0,    strongBuyPct: 0,    sessionAware: false, fridayPreload: false },
   bot:         { label: 'Cauteloso',     color: '#3fb950', slotPace: 1.0, signalBuyPct: 0.02, strongBuyPct: 0.05, sessionAware: false, fridayPreload: false },
   aggressive:  { label: 'Agresivo',      color: '#f85149', slotPace: 0.4, signalBuyPct: 0.08, strongBuyPct: 0.20, sessionAware: false, fridayPreload: false },
   sessions:    { label: 'Sesiones',      color: '#a371f7', slotPace: 0.6, signalBuyPct: 0.05, strongBuyPct: 0.12, sessionAware: true,  fridayPreload: false },
   friday:      { label: 'Viernes',       color: '#d29922', slotPace: 1.0, signalBuyPct: 0.02, strongBuyPct: 0.05, sessionAware: false, fridayPreload: true  },
   smart:       { label: 'Inteligente',   color: '#58a6ff', slotPace: 0.4, signalBuyPct: 0.08, strongBuyPct: 0.20, sessionAware: true,  fridayPreload: true  },
+  // ── Gemelas IA: misma receta de tamaño/timing, pero las compras oportunistas
+  //    las dispara el VEREDICTO de Opus (COMPRAR_AHORA/PARCIAL), no las matemáticas.
+  bot_ai:        { label: 'Cauteloso IA',   color: '#56d364', ai: true, slotPace: 1.0, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.02, aiNowPct: 0.05, sessionAware: false, fridayPreload: false },
+  aggressive_ai: { label: 'Agresivo IA',    color: '#ffa198', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.08, aiNowPct: 0.20, sessionAware: false, fridayPreload: false },
+  smart_ai:      { label: 'Inteligente IA', color: '#d2a8ff', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.08, aiNowPct: 0.20, sessionAware: true,  fridayPreload: true  },
 };
+
+// Confianza mínima de Opus para que las gemelas IA actúen sobre un veredicto
+export const AI_MIN_CONFIDENCE = 55;
 
 // Configuración del trader (compra barato, toma ganancia al subir).
 export const TRADER = {

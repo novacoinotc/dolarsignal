@@ -8,7 +8,7 @@ import { fetchBtc } from './sources/btc.js';
 import { fetchRfqBuy, fetchRfqSell } from './sources/rfq.js';
 import { fetchNews } from './sources/news.js';
 import { evaluateSignal, indicatorSnapshot } from './signals.js';
-import { onSignal, onSlotCheck, onTraderTick } from './trader.js';
+import { onSignal, onSlotCheck, onTraderTick, onVerdict } from './trader.js';
 import { evaluateOutcomes } from './outcomes.js';
 import { alertSignal, alertNews, sendAlert } from './alerts.js';
 import { allEvents, upcomingEvents } from './calendar.js';
@@ -156,6 +156,11 @@ async function agentTick() {
       lastAnalystTs = now;
       await insertAnalysis({ ts: now, kind: 'analyst', model: CONFIG.ANALYST_MODEL, summary: verdict.headline, payload: verdict });
       console.log(`🤖 [${cdmxTime()}] Opus: ${verdict.stance} (${verdict.confidence}%) — ${verdict.headline}`);
+      // Las gemelas IA compran según este veredicto (al precio RFQ real)
+      const aiTrades = await onVerdict(verdict, buyPrice());
+      if (aiTrades.length) {
+        console.log(`🤖💰 [${cdmxTime()}] ${aiTrades.length} compras IA (${verdict.stance}) @ ${aiTrades[0].price.toFixed(4)}`);
+      }
       if (verdict.stance === 'COMPRAR_AHORA' && verdict.confidence >= 70) {
         await sendAlert(`🤖 Análisis IA: ${verdict.stance} (${verdict.confidence}%)`, verdict.headline + '\n\n' + verdict.reasoning);
       }

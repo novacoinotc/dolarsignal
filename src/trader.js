@@ -5,11 +5,12 @@
 import { CONFIG, tradingDate } from './config.js';
 import { insertTrade, spent, traderPosition } from './queries.js';
 import {
-  ACCUMULATORS, TRADER, dayPlan, sessionWeight, cdmxMinutes,
+  ACCUMULATORS, TRADER, AI_MIN_CONFIDENCE, dayPlan, sessionWeight, cdmxMinutes,
 } from './strategies.js';
 
 const CATCHUP_SLOTS = 4;           // slots finales donde se acelera al 100%
-const lastSignalBuyTs = {};        // cooldown por estrategia
+const lastSignalBuyTs = {};        // cooldown por estrategia (compras por señal)
+const lastAiBuyTs = {};            // cooldown por estrategia (compras por veredicto IA)
 let lastSlotKey = null;
 let lastTraderTs = 0;
 
@@ -75,6 +76,37 @@ export async function onSignal(signal, execPrice) {
     const amount = Math.min(plan.budget * pct, remaining);
     const trade = await execute(name, 'signal', amount, price, signal.id, now);
     if (trade) { lastSignalBuyTs[name] = now; executed.push(trade); }
+  }
+  return executed;
+}
+
+// Compra oportunista de las gemelas IA según el VEREDICTO de Opus (no las matemáticas).
+// COMPRAR_AHORA → tamaño "fuerte" (aiNowPct); COMPRAR_PARCIAL → moderado (aiPartialPct);
+// ESPERAR/EVITAR o confianza baja → no compra (las gemelas igual completan con slots).
+export async function onVerdict(verdict, execPrice) {
+  if (!verdict || !execPrice) return [];
+  const now = Date.now();
+  const minutes = cdmxMinutes(now);
+  const date = tradingDate(now);
+  const conf = verdict.confidence || 0;
+  const executed = [];
+
+  for (const [name, cfg] of Object.entries(ACCUMULATORS)) {
+    if (!cfg.ai) continue;
+    let pct = 0;
+    if (conf >= AI_MIN_CONFIDENCE) {
+      if (verdict.stance === 'COMPRAR_AHORA') pct = cfg.aiNowPct;
+      else if (verdict.stance === 'COMPRAR_PARCIAL') pct = cfg.aiPartialPct;
+    }
+    if (pct <= 0) continue;
+    if (now - (lastAiBuyTs[name] || 0) < CONFIG.SIGNAL_COOLDOWN_MS) continue;
+    const plan = dayPlan(cfg, now);
+    if (plan.budget < 1 || minutes > plan.endMin) continue;
+    const remaining = plan.budget - await spent(date, name);
+    if (remaining < 1) continue;
+    const amount = Math.min(plan.budget * pct, remaining);
+    const trade = await execute(name, 'ai', amount, execPrice, null, now);
+    if (trade) { lastAiBuyTs[name] = now; executed.push(trade); }
   }
   return executed;
 }
