@@ -3,31 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DolarSignal — Bot de compra USDT/MXN</title>
+<title>DolarSignal — Laboratorio de estrategias USDT/MXN</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --border: #30363d;
     --text: #e6edf3; --muted: #8b949e;
-    --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff; --purple: #a371f7;
   }
   * { box-sizing: border-box; margin: 0; }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; padding: 16px; }
   h1 { font-size: 20px; margin-bottom: 4px; }
   .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
   .grid { display: grid; gap: 12px; }
-  .cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 12px; }
+  .cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 12px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; }
   .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
   .card .value { font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
   .card .hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
   .panel h2 { font-size: 14px; margin-bottom: 10px; color: var(--blue); }
-  .two-col { grid-template-columns: 1fr 1fr; }
-  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+  .two-col { grid-template-columns: 1.4fr 1fr; }
+  @media (max-width: 980px) { .two-col { grid-template-columns: 1fr; } }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--border); }
-  td { padding: 5px 8px; border-bottom: 1px solid #21262d; font-variant-numeric: tabular-nums; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 8px; border-bottom: 1px solid #21262d; font-variant-numeric: tabular-nums; }
   .pos { color: var(--green); } .neg { color: var(--red); }
   .tier { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
   .tier-WATCH { background: #1c2a3a; color: var(--blue); }
@@ -39,38 +39,51 @@
   .feed-item .when { color: var(--muted); font-size: 11px; }
   .feed-item ul { margin: 4px 0 0 18px; color: var(--muted); }
   .banner { background: #2d1215; border: 1px solid var(--red); color: var(--red); padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-weight: 600; display: none; }
-  .progress { height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; margin-top: 6px; }
-  .progress > div { height: 100%; background: var(--green); transition: width .5s; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .rank1 td { background: rgba(63,185,80,.08); }
+  .win { font-weight: 700; }
   a { color: var(--blue); text-decoration: none; }
-  #chart-box { height: 360px; }
+  #chart-box { height: 340px; }
+  .leader { font-size: 13px; }
+  .leader td { padding: 8px; }
+  .leader .big { font-size: 17px; font-weight: 700; }
+  .pill { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: #21262d; color: var(--muted); margin-left: 6px; }
 </style>
 </head>
 <body>
-<h1>💵 DolarSignal</h1>
-<div class="sub">Bot de compra oportunista USDT/MXN — paper trading con fondo de $20,000,000 MXN/día · <span id="updated"></span></div>
+<h1>💵 DolarSignal — Laboratorio de estrategias</h1>
+<div class="sub">7 estrategias compitiendo en paralelo · paper trading $20M MXN/día · <span id="updated"></span></div>
 
 <div class="banner" id="blackout"></div>
 
 <div class="grid cards" id="cards"></div>
 
 <div class="panel">
-  <h2>USDT/MXN — últimas 24 horas (▲ = compras del bot por señal)</h2>
+  <h2>🏆 Ranking de estrategias — ¿cuál compra más barato? (centavos ganados por USDT vs compra pareja)</h2>
+  <table id="leader" class="leader"><thead><tr>
+    <th>#</th><th>Estrategia</th><th>Precio promedio</th><th>Centavos/USDT</th><th>Ahorro acumulado</th><th>USDT comprado</th><th># compras señal</th>
+  </tr></thead><tbody></tbody></table>
+  <div style="font-size:11px;color:var(--muted);margin-top:8px" id="trader-line"></div>
+</div>
+
+<div class="panel">
+  <h2>USDT/MXN — últimas 24 horas (▲ compra · ▼ venta del trader)</h2>
   <div id="chart-box"><canvas id="chart"></canvas></div>
 </div>
 
 <div class="grid two-col">
   <div class="panel">
-    <h2>📈 Rendimiento diario: bot vs TWAP (compra pareja)</h2>
-    <table id="perf"><thead><tr>
-      <th>Fecha</th><th>Precio prom. bot</th><th>Precio prom. TWAP</th><th>Centavos ganados/USDT</th><th>Ahorro MXN</th><th># compras señal</th>
-    </tr></thead><tbody></tbody></table>
+    <h2>📅 Rendimiento por día (centavos ganados vs pareja)</h2>
+    <div style="overflow-x:auto"><table id="daily"><thead></thead><tbody></tbody></table></div>
   </div>
   <div class="panel">
     <h2>🎯 Calidad de señales (¿subió el precio después?)</h2>
     <table id="quality"><thead><tr>
-      <th>Tier</th><th>Horizonte</th><th># señales</th><th>Δ prom. (centavos)</th><th>% acierto</th>
+      <th>Tier</th><th>Horizonte</th><th>#</th><th>Δ prom (¢)</th><th>% acierto</th>
     </tr></thead><tbody></tbody></table>
-    <h2 style="margin-top:16px">📅 Próximos eventos de riesgo</h2>
+    <h2 style="margin-top:16px">🗓️ Efecto viernes (cierre vs fin de semana)</h2>
+    <table id="friday"><thead><tr><th>Viernes</th><th>Cierre</th><th>Prom. finde</th><th>Δ ¢</th></tr></thead><tbody></tbody></table>
+    <h2 style="margin-top:16px">📌 Próximos eventos de riesgo</h2>
     <table id="events"><thead><tr><th>Fecha (CDMX)</th><th>Evento</th></tr></thead><tbody></tbody></table>
   </div>
 </div>
@@ -81,17 +94,17 @@
     <div class="feed" id="signals"></div>
   </div>
   <div class="panel">
-    <h2>💰 Compras del bot (paper)</h2>
+    <h2>💰 Operaciones recientes (todas las estrategias)</h2>
     <div class="feed">
       <table id="trades"><thead><tr>
-        <th>Hora</th><th>Tipo</th><th>MXN</th><th>Precio</th><th>USDT</th><th>+15m</th><th>+1h</th><th>+4h</th>
+        <th>Hora</th><th>Estrategia</th><th>Tipo</th><th>MXN</th><th>Precio</th><th>+15m</th><th>+1h</th><th>+4h</th>
       </tr></thead><tbody></tbody></table>
     </div>
   </div>
 </div>
 
 <div class="panel">
-  <h2>📰 Noticias relevantes para USD/MXN</h2>
+  <h2>📰 Noticias que mueven USD/MXN y cripto (análisis en tiempo real)</h2>
   <div class="feed" id="news"></div>
 </div>
 
@@ -99,23 +112,29 @@
 const $ = id => document.getElementById(id);
 const fmt = (n, d = 4) => n == null ? '—' : Number(n).toLocaleString('es-MX', { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtMxn = n => n == null ? '—' : '$' + Number(n).toLocaleString('es-MX', { maximumFractionDigits: 0 });
+const fmtUsdt = n => n == null ? '—' : Number(n).toLocaleString('es-MX', { maximumFractionDigits: 0 });
 const when = ts => new Date(ts).toLocaleString('es-MX', { timeZone: 'America/Mexico_City', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const cls = n => n == null ? '' : n >= 0 ? 'pos' : 'neg';
+const cent = n => n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(3) + '¢';
 const deltaCell = (outcomes, h) => {
   const o = (outcomes || []).find(x => x.horizon_min === h);
   if (!o) return '<td>—</td>';
   return `<td class="${cls(o.delta_centavos)}">${o.delta_centavos >= 0 ? '+' : ''}${o.delta_centavos.toFixed(2)}¢</td>`;
 };
+const COLORS = { twap:'#8b949e', bot:'#3fb950', aggressive:'#f85149', sessions:'#a371f7', friday:'#d29922', smart:'#58a6ff', trader:'#ff7b72' };
+const LABELS = { twap:'Pareja', bot:'Cauteloso', aggressive:'Agresivo', sessions:'Sesiones', friday:'Viernes', smart:'Inteligente' };
 
 let chart;
 function renderChart(data, trades) {
-  const buys = trades.filter(t => t.reason === 'signal').map(t => ({ x: t.ts, y: t.price }));
+  const buys = trades.filter(t => t.reason === 'signal' || t.reason === 'buy').map(t => ({ x: t.ts, y: t.price }));
+  const sells = trades.filter(t => t.reason === 'sell').map(t => ({ x: t.ts, y: t.price }));
   const cfg = {
     type: 'line',
     data: { datasets: [
-      { label: 'USDT/MXN (Bitso)', data: data.bitso.map(c => ({ x: c.bucket, y: c.price })), borderColor: '#58a6ff', borderWidth: 1.5, pointRadius: 0, tension: .1 },
-      { label: 'USD/MXN spot', data: data.spot.map(c => ({ x: c.bucket, y: c.price })), borderColor: '#8b949e', borderWidth: 1, pointRadius: 0, borderDash: [4, 3], tension: .1 },
-      { label: 'Compras bot', data: buys, type: 'scatter', pointStyle: 'triangle', pointRadius: 8, backgroundColor: '#3fb950', borderColor: '#3fb950' },
+      { label: 'USDT/MXN (Bitso)', data: data.bitso.map(c => ({ x: c.bucket, y: c.price })), borderColor: '#58a6ff', borderWidth: 1.5, pointRadius: 0, tension: .1, yAxisID: 'y' },
+      { label: 'USD/MXN spot', data: data.spot.map(c => ({ x: c.bucket, y: c.price })), borderColor: '#8b949e', borderWidth: 1, pointRadius: 0, borderDash: [4, 3], tension: .1, yAxisID: 'y' },
+      { label: 'Compras', data: buys, type: 'scatter', pointStyle: 'triangle', pointRadius: 7, backgroundColor: '#3fb950', borderColor: '#3fb950', yAxisID: 'y' },
+      { label: 'Ventas trader', data: sells, type: 'scatter', pointStyle: 'triangle', rotation: 180, pointRadius: 7, backgroundColor: '#f85149', borderColor: '#f85149', yAxisID: 'y' },
     ]},
     options: {
       maintainAspectRatio: false, animation: false,
@@ -140,45 +159,67 @@ async function refresh() {
     if (state.blackout) $('blackout').textContent = '⛔ VENTANA DE RIESGO ACTIVA: ' + state.blackout + ' — compras por señal bloqueadas';
 
     const ind = state.indicators || {};
-    const pct = state.today ? Math.min(100, state.today.botSpent / state.today.budget * 100) : 0;
     $('cards').innerHTML = `
       <div class="card"><div class="label">USDT/MXN Bitso</div><div class="value">${fmt(state.bitso?.price)}</div><div class="hint">bid ${fmt(state.bitso?.bid)} / ask ${fmt(state.bitso?.ask)}</div></div>
       <div class="card"><div class="label">USD/MXN spot</div><div class="value">${fmt(state.spot?.price)}</div><div class="hint">forex intradía</div></div>
+      <div class="card"><div class="label">BTC/USD</div><div class="value">${state.btc?.price ? '$' + fmtUsdt(state.btc.price) : '—'}</div><div class="hint" style="color:${ind.btcZ > 1.5 ? 'var(--green)' : 'inherit'}">z ${ind.btcZ == null ? '—' : ind.btcZ.toFixed(2)} ${ind.btcZ > 1.5 ? '· alza → USDT barato' : ''}</div></div>
       <div class="card"><div class="label">Prima USDT</div><div class="value">${state.premium == null ? '—' : (state.premium * 100).toFixed(3) + '%'}</div><div class="hint">vs dólar spot</div></div>
-      <div class="card"><div class="label">RSI (1m)</div><div class="value" style="color:${ind.rsi < 30 ? 'var(--green)' : ind.rsi > 70 ? 'var(--red)' : 'inherit'}">${ind.rsi == null ? '—' : ind.rsi.toFixed(1)}</div><div class="hint">&lt;30 = sobreventa (barato)</div></div>
+      <div class="card"><div class="label">RSI (1m)</div><div class="value" style="color:${ind.rsi < 30 ? 'var(--green)' : ind.rsi > 70 ? 'var(--red)' : 'inherit'}">${ind.rsi == null ? '—' : ind.rsi.toFixed(1)}</div><div class="hint">&lt;30 sobreventa · &gt;70 caro</div></div>
       <div class="card"><div class="label">Z-score 60m</div><div class="value" style="color:${ind.z < -1 ? 'var(--green)' : 'inherit'}">${ind.z == null ? '—' : ind.z.toFixed(2)}</div><div class="hint">&lt;-1.5 = dip fuerte</div></div>
-      <div class="card"><div class="label">Presupuesto hoy (bot)</div><div class="value">${pct.toFixed(1)}%</div><div class="progress"><div style="width:${pct}%"></div></div><div class="hint">${fmtMxn(state.today?.botSpent)} de ${fmtMxn(state.today?.budget)}</div></div>
     `;
 
     renderChart(candles, trades);
 
-    $('perf').querySelector('tbody').innerHTML = perf.days.map(d => `<tr>
-      <td>${d.date}</td><td>${fmt(d.botAvg)}</td><td>${fmt(d.twapAvg)}</td>
-      <td class="${cls(d.centavosSaved)}">${d.centavosSaved == null ? '—' : (d.centavosSaved >= 0 ? '+' : '') + d.centavosSaved.toFixed(3) + '¢'}</td>
-      <td class="${cls(d.savedMxn)}">${d.savedMxn == null ? '—' : fmtMxn(d.savedMxn)}</td>
-      <td>${d.signalTrades}</td></tr>`).join('') || '<tr><td colspan="6">Sin datos aún — el bot necesita un día de operación</td></tr>';
+    // Ranking de estrategias
+    const ranked = [...(perf.global || [])].sort((a, b) => (b.centavosSaved ?? -1e9) - (a.centavosSaved ?? -1e9));
+    $('leader').querySelector('tbody').innerHTML = ranked.map((p, i) => `
+      <tr class="${i === 0 && p.strategy !== 'twap' ? 'rank1' : ''}">
+        <td>${p.strategy === 'twap' ? '–' : i + 1}</td>
+        <td><span class="dot" style="background:${COLORS[p.strategy]}"></span>${p.label}${p.strategy === 'smart' ? '<span class="pill">todo junto</span>' : ''}${p.strategy === 'twap' ? '<span class="pill">referencia</span>' : ''}</td>
+        <td>${fmt(p.avg)}</td>
+        <td class="big ${cls(p.centavosSaved)} ${i === 0 && p.strategy !== 'twap' ? 'win' : ''}">${p.strategy === 'twap' ? '—' : cent(p.centavosSaved)}</td>
+        <td class="${cls(p.savedMxn)}">${p.strategy === 'twap' ? '—' : fmtMxn(p.savedMxn)}</td>
+        <td>${fmtUsdt(p.usdt)}</td>
+        <td>${p.signalTrades}</td>
+      </tr>`).join('') || '<tr><td colspan="7">Sin datos aún — esperando primeras compras</td></tr>';
 
-    $('quality').querySelector('tbody').innerHTML = perf.quality.map(q => `<tr>
+    const tr = perf.trader || {};
+    $('trader-line').innerHTML = `💱 <b style="color:${COLORS.trader}">Trader</b> (compra y vende en picos): ganancia realizada <b class="${cls(tr.realizedMxn)}">${fmtMxn(tr.realizedMxn)}</b> · ${tr.buys || 0} compras / ${tr.sells || 0} ventas · posición abierta ${fmtUsdt(tr.openUsdt)} USDT @ ${fmt(tr.avgCost)}`;
+
+    // Tabla diaria (estrategias en columnas)
+    const keys = ['bot','aggressive','sessions','friday','smart'];
+    $('daily').querySelector('thead').innerHTML = '<tr><th>Fecha</th>' + keys.map(k => `<th><span class="dot" style="background:${COLORS[k]}"></span>${LABELS[k]}</th>`).join('') + '</tr>';
+    $('daily').querySelector('tbody').innerHTML = (perf.days || []).map(d => `<tr><td>${d.date}</td>${keys.map(k => {
+      const c = d.cells[k]?.centavos;
+      return `<td class="${cls(c)}">${c == null ? '—' : cent(c)}</td>`;
+    }).join('')}</tr>`).join('') || `<tr><td colspan="${keys.length + 1}">Sin días completos aún</td></tr>`;
+
+    $('quality').querySelector('tbody').innerHTML = (perf.quality || []).map(q => `<tr>
       <td><span class="tier tier-${q.tier}">${q.tier}</span></td><td>+${q.horizon_min}m</td><td>${q.n}</td>
-      <td class="${cls(q.avg_delta)}">${(q.avg_delta >= 0 ? '+' : '') + q.avg_delta.toFixed(2)}¢</td>
-      <td>${q.hit_rate.toFixed(0)}%</td></tr>`).join('') || '<tr><td colspan="5">Sin señales evaluadas aún</td></tr>';
+      <td class="${cls(q.avg_delta)}">${(q.avg_delta >= 0 ? '+' : '') + Number(q.avg_delta).toFixed(2)}¢</td>
+      <td>${Number(q.hit_rate).toFixed(0)}%</td></tr>`).join('') || '<tr><td colspan="5">Sin señales evaluadas aún</td></tr>';
+
+    $('friday').querySelector('tbody').innerHTML = (perf.friday || []).map(f => `<tr>
+      <td>${f.friday}</td><td>${fmt(f.closePrice)}</td><td>${fmt(f.weekendAvg)}</td>
+      <td class="${cls(f.deltaCentavos)}">${cent(f.deltaCentavos)}</td></tr>`).join('') || '<tr><td colspan="4">Aún sin fines de semana registrados</td></tr>';
 
     $('events').querySelector('tbody').innerHTML = (state.events || []).map(e =>
-      `<tr><td>${when(e.ts)}</td><td>${e.name}</td></tr>`).join('');
+      `<tr><td>${when(e.ts)}</td><td>${e.name}</td></tr>`).join('') || '<tr><td colspan="2">—</td></tr>';
 
-    $('signals').innerHTML = signals.map(s => `<div class="feed-item">
-      <span class="tier tier-${s.tier}">${s.tier}</span> <b>${fmt(s.price)}</b> · score ${s.score.toFixed(1)} <span class="when">· ${when(s.ts)}</span>
-      <ul>${s.reasons.map(r => `<li>${r}</li>`).join('')}</ul></div>`).join('') || '<div class="feed-item">Sin señales aún — el motor necesita ~20 min de datos para calentar</div>';
+    $('signals').innerHTML = (signals || []).map(s => `<div class="feed-item">
+      <span class="tier tier-${s.tier}">${s.tier}</span> <b>${fmt(s.price)}</b> · score ${Number(s.score).toFixed(1)} <span class="when">· ${when(s.ts)}</span>
+      <ul>${(s.reasons || []).map(r => `<li>${r}</li>`).join('')}</ul></div>`).join('') || '<div class="feed-item">Sin señales aún — el motor necesita ~20 min de datos para calentar</div>';
 
-    $('trades').querySelector('tbody').innerHTML = trades.map(t => `<tr>
-      <td>${when(t.ts)}</td><td>${t.reason === 'signal' ? '🟢 señal' : '🕐 slot'}</td>
-      <td>${fmtMxn(t.mxn)}</td><td>${fmt(t.price)}</td><td>${fmt(t.usdt, 0)}</td>
-      ${deltaCell(t.outcomes, 15)}${deltaCell(t.outcomes, 60)}${deltaCell(t.outcomes, 240)}</tr>`).join('') || '<tr><td colspan="8">Sin compras aún</td></tr>';
+    $('trades').querySelector('tbody').innerHTML = (trades || []).map(t => `<tr>
+      <td>${when(t.ts)}</td><td><span class="dot" style="background:${COLORS[t.strategy] || '#8b949e'}"></span>${LABELS[t.strategy] || t.strategy}</td>
+      <td>${t.reason === 'sell' ? '🔴 venta' : t.reason === 'buy' ? '🟢 compra' : '🟢 señal'}</td>
+      <td>${fmtMxn(t.mxn)}</td><td>${fmt(t.price)}</td>
+      ${deltaCell(t.outcomes, 15)}${deltaCell(t.outcomes, 60)}${deltaCell(t.outcomes, 240)}</tr>`).join('') || '<tr><td colspan="8">Sin operaciones aún</td></tr>';
 
-    $('news').innerHTML = news.map(n => `<div class="feed-item">
-      <b style="color:${n.score >= 4 ? 'var(--yellow)' : 'inherit'}">[${n.score.toFixed(1)}]</b>
+    $('news').innerHTML = (news || []).map(n => `<div class="feed-item">
+      <b style="color:${n.score >= 4 ? 'var(--yellow)' : 'inherit'}">[${Number(n.score).toFixed(1)}]</b>
       ${n.link ? `<a href="${n.link}" target="_blank">${n.title}</a>` : n.title}
-      <span class="when">· ${n.source} · ${when(n.ts)} · ${n.keywords.join(', ')}</span></div>`).join('') || '<div class="feed-item">Sin noticias aún</div>';
+      <span class="when">· ${n.source} · ${when(n.ts)} · ${(n.keywords || []).join(', ')}</span></div>`).join('') || '<div class="feed-item">Sin noticias aún</div>';
   } catch (err) {
     console.error(err);
   }

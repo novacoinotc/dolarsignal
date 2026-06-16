@@ -4,9 +4,10 @@ import { initSchema } from './db.js';
 import { insertTick, insertNews } from './queries.js';
 import { fetchBitso } from './sources/bitso.js';
 import { fetchSpot } from './sources/spot.js';
+import { fetchBtc } from './sources/btc.js';
 import { fetchNews } from './sources/news.js';
-import { evaluateSignal } from './signals.js';
-import { onSignal, onSlotCheck } from './trader.js';
+import { evaluateSignal, indicatorSnapshot } from './signals.js';
+import { onSignal, onSlotCheck, onTraderTick } from './trader.js';
 import { evaluateOutcomes } from './outcomes.js';
 import { alertSignal, alertNews, sendAlert } from './alerts.js';
 import { allEvents, upcomingEvents } from './calendar.js';
@@ -25,8 +26,10 @@ async function pollBitso() {
     lastBitsoPrice = t.price;
 
     const signal = await evaluateSignal(t.ts);
+    const snapshot = await indicatorSnapshot(t.ts);
+
     if (signal) {
-      const trade = await onSignal(signal);
+      const trades = await onSignal(signal);   // todas las acumuladoras
       // Alerta si sube de tier o pasaron >10 min desde la última
       const shouldAlert = signal.tier !== lastAlertedTier || t.ts - lastAlertTs > 10 * 60_000;
       if (shouldAlert) {
@@ -34,14 +37,30 @@ async function pollBitso() {
         lastAlertedTier = signal.tier;
         lastAlertTs = t.ts;
       }
-      if (trade) {
-        console.log(`💰 [${cdmxTime()}] Compra paper (${signal.tier}): $${trade.mxn.toLocaleString('es-MX', { maximumFractionDigits: 0 })} MXN @ ${trade.price.toFixed(4)} = ${trade.usdt.toFixed(2)} USDT`);
+      const botTrade = trades.find(x => x.strategy === 'smart') || trades[0];
+      if (botTrade) {
+        console.log(`💰 [${cdmxTime()}] ${trades.length} compras (${signal.tier}) @ ${botTrade.price.toFixed(4)}`);
       }
     } else {
       lastAlertedTier = null;
     }
+
+    // Trader: compra/vende en puntos clave en cada tick
+    const action = await onTraderTick(t.ts, t.price, signal, snapshot);
+    if (action) {
+      console.log(`💱 [${cdmxTime()}] Trader ${action.reason.toUpperCase()}: $${action.mxn.toLocaleString('es-MX', { maximumFractionDigits: 0 })} @ ${action.price.toFixed(4)}`);
+    }
   } catch (err) {
     console.error(`[bitso] ${err.message}`);
+  }
+}
+
+async function pollBtc() {
+  try {
+    const t = await fetchBtc();
+    await insertTick({ ts: t.ts, source: 'btc', price: t.price });
+  } catch (err) {
+    console.error(`[btc] ${err.message}`);
   }
 }
 
@@ -73,10 +92,8 @@ async function pollNews() {
 async function minuteTick() {
   try {
     const trades = await onSlotCheck(Date.now(), lastBitsoPrice);
-    for (const t of trades) {
-      if (t.strategy === 'bot') {
-        console.log(`🕐 [${cdmxTime()}] Slot ${t.strategy}: $${t.mxn.toLocaleString('es-MX', { maximumFractionDigits: 0 })} MXN @ ${t.price.toFixed(4)}`);
-      }
+    if (trades.length) {
+      console.log(`🕐 [${cdmxTime()}] Slots: ${trades.length} estrategias compraron @ ${trades[0].price.toFixed(4)}`);
     }
     await evaluateOutcomes();
   } catch (err) {
@@ -97,15 +114,17 @@ async function main() {
 
   startServer();
 
-  // Primer ciclo inmediato
-  await Promise.allSettled([pollBitso(), pollSpot(), pollNews()]);
+  // Primer ciclo inmediato (BTC primero para que la señal lo tenga disponible)
+  await Promise.allSettled([pollBtc(), pollSpot(), pollNews()]);
+  await pollBitso();
 
   setInterval(pollBitso, CONFIG.BITSO_POLL_MS);
   setInterval(pollSpot, CONFIG.SPOT_POLL_MS);
+  setInterval(pollBtc, CONFIG.BTC_POLL_MS);
   setInterval(pollNews, CONFIG.NEWS_POLL_MS);
   setInterval(minuteTick, CONFIG.EVAL_POLL_MS);
 
-  await sendAlert('🚀 DolarSignal iniciado', `Monitoreando USDT/MXN y USD/MXN. Dashboard en puerto ${CONFIG.PORT}.`);
+  await sendAlert('🚀 DolarSignal iniciado', `7 estrategias en paralelo · monitoreando USDT/MXN, USD/MXN, BTC y noticias. Puerto ${CONFIG.PORT}.`);
 }
 
 main().catch(err => {

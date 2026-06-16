@@ -28,7 +28,19 @@ const KEYWORDS = [
   ['remesas', 1.5], ['pemex', 1.5], ['calificación crediticia', 2.5], ['moody', 2], ['fitch', 2], ['s&p', 1.5],
   ['tipo de cambio', 2], ['peso mexicano', 1.5], ['superpeso', 1.5], ['depreciación', 2], ['devaluación', 3],
   ['intervención cambiaria', 3], ['comisión de cambios', 3],
+  // Cripto: mueven la demanda de USDT (rally BTC → rotación, crash → fuga a stablecoins)
+  ['bitcoin', 1.5], ['btc ', 1.5], ['ethereum', 1], ['cripto', 1.5], ['crypto', 1.5],
+  ['stablecoin', 2], ['tether', 2.5], ['usdt', 2], ['rally bitcoin', 2], ['bitcoin crash', 2.5],
+  ['etf bitcoin', 2], ['halving', 1.5], ['sec crypto', 2],
 ];
+
+// Feeds cripto adicionales
+FEEDS.push({
+  name: 'GoogleNews-Cripto',
+  url: 'https://news.google.com/rss/search?q=' +
+    encodeURIComponent('bitcoin OR tether OR stablecoin OR "crypto market"') +
+    '&hl=es-419&gl=MX&ceid=MX:es-419',
+});
 
 function parseRss(xml) {
   const items = [];

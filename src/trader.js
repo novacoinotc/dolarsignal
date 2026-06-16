@@ -1,14 +1,17 @@
-// Paper trading: dos estrategias compran 20M MXN diarios en USDT.
-//  - 'twap': referencia tonta — compra parejo cada 30 min (lo que haría una mesa sin bot)
-//  - 'bot':  compra oportunista en señales (adelanta compras en dips) y rellena
-//            el resto con slots para garantizar completar el presupuesto diario.
-// La diferencia de precio promedio entre ambas = centavos que el bot le gana al mercado.
+// Motor de paper trading: corre TODAS las estrategias en paralelo sobre el
+// mismo mercado real. Las acumuladoras (twap, bot, aggressive, sessions, friday,
+// smart) compran $20M MXN/día; el trader compra y vende en puntos clave.
 
 import { CONFIG, tradingDate } from './config.js';
-import { insertTrade, spent } from './queries.js';
+import { insertTrade, spent, traderPosition } from './queries.js';
+import {
+  ACCUMULATORS, TRADER, dayPlan, sessionWeight, cdmxMinutes,
+} from './strategies.js';
 
-let lastSignalBuyTs = 0;
+const CATCHUP_SLOTS = 4;           // slots finales donde se acelera al 100%
+const lastSignalBuyTs = {};        // cooldown por estrategia
 let lastSlotKey = null;
+let lastTraderTs = 0;
 
 async function execute(strategy, reason, mxn, price, signalId = null, now = Date.now()) {
   if (mxn < 1) return null;
@@ -17,17 +20,7 @@ async function execute(strategy, reason, mxn, price, signalId = null, now = Date
   return { strategy, reason, mxn, price, usdt };
 }
 
-// Minutos transcurridos del día en CDMX
-function cdmxMinutes(now) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CONFIG.TIMEZONE, hour: 'numeric', minute: 'numeric', hour12: false,
-  }).formatToParts(new Date(now));
-  const h = Number(parts.find(p => p.type === 'hour').value) % 24;
-  const m = Number(parts.find(p => p.type === 'minute').value);
-  return h * 60 + m;
-}
-
-// Cada minuto: ¿toca slot de compra (cada 30 min)?
+// Cada minuto: slots de compra de relleno (cada 30 min) para las acumuladoras.
 export async function onSlotCheck(now, price) {
   if (!price) return [];
   const minutes = cdmxMinutes(now);
@@ -37,31 +30,74 @@ export async function onSlotCheck(now, price) {
   lastSlotKey = key;
 
   const date = tradingDate(now);
-  const remainingSlots = Math.max(1, Math.ceil((1440 - minutes) / CONFIG.TWAP_SLOT_MINUTES));
   const executed = [];
 
-  for (const strategy of ['twap', 'bot']) {
-    const remaining = CONFIG.DAILY_BUDGET_MXN - await spent(date, strategy);
-    const amount = remaining / remainingSlots;
-    const t = await execute(strategy, 'slot', amount, price, null, now);
+  for (const [name, cfg] of Object.entries(ACCUMULATORS)) {
+    const plan = dayPlan(cfg, now);
+    if (plan.budget < 1 || minutes > plan.endMin) continue;   // sin presupuesto o ventana cerrada
+    const remaining = plan.budget - await spent(date, name);
+    if (remaining < 1) continue;
+    const slotsLeft = Math.max(1, Math.ceil((plan.endMin - minutes) / CONFIG.TWAP_SLOT_MINUTES));
+    const evenPace = remaining / slotsLeft;
+    const pace = slotsLeft <= CATCHUP_SLOTS ? 1 : cfg.slotPace;
+    const amount = Math.min(remaining, evenPace * pace * sessionWeight(cfg, minutes));
+    const t = await execute(name, 'slot', amount, price, null, now);
     if (t) executed.push(t);
   }
   return executed;
 }
 
-// Compra oportunista cuando hay señal BUY / STRONG_BUY
+// Compra oportunista en señal BUY / STRONG_BUY para las acumuladoras que la usan.
 export async function onSignal(signal) {
-  if (signal.tier !== 'BUY' && signal.tier !== 'STRONG_BUY') return null;
+  if (signal.tier !== 'BUY' && signal.tier !== 'STRONG_BUY') return [];
   const now = signal.ts;
-  if (now - lastSignalBuyTs < CONFIG.SIGNAL_COOLDOWN_MS) return null;
-
+  const minutes = cdmxMinutes(now);
   const date = tradingDate(now);
-  const remaining = CONFIG.DAILY_BUDGET_MXN - await spent(date, 'bot');
-  if (remaining < 1) return null;
+  const executed = [];
 
-  const pct = signal.tier === 'STRONG_BUY' ? CONFIG.STRONG_BUY_PCT : CONFIG.SIGNAL_BUY_PCT;
-  const amount = Math.min(CONFIG.DAILY_BUDGET_MXN * pct, remaining);
-  const trade = await execute('bot', 'signal', amount, signal.price, signal.id, now);
-  if (trade) lastSignalBuyTs = now;
-  return trade;
+  for (const [name, cfg] of Object.entries(ACCUMULATORS)) {
+    const pct = signal.tier === 'STRONG_BUY' ? cfg.strongBuyPct : cfg.signalBuyPct;
+    if (pct <= 0) continue;
+    if (now - (lastSignalBuyTs[name] || 0) < CONFIG.SIGNAL_COOLDOWN_MS) continue;
+    const plan = dayPlan(cfg, now);
+    if (plan.budget < 1 || minutes > plan.endMin) continue;
+    const remaining = plan.budget - await spent(date, name);
+    if (remaining < 1) continue;
+    const amount = Math.min(plan.budget * pct, remaining);
+    const trade = await execute(name, 'signal', amount, signal.price, signal.id, now);
+    if (trade) { lastSignalBuyTs[name] = now; executed.push(trade); }
+  }
+  return executed;
+}
+
+// Trader: compra barato y VENDE caro en puntos clave. Mide ganancia realizada.
+//  - signal (BUY/STRONG): compra si no excede el tope de inventario.
+//  - snapshot caro (z alto o RSI alto) y posición con ganancia: vende y realiza.
+export async function onTraderTick(now, price, signal, snapshot) {
+  if (!price) return null;
+  if (now - lastTraderTs < CONFIG.SIGNAL_COOLDOWN_MS) return null;
+
+  const pos = await traderPosition();   // { usdt, avgCost }
+  let action = null;
+
+  // ¿Vender? toma de ganancia: el precio subió lo suficiente sobre el costo,
+  // o está estadísticamente caro (z/RSI altos) teniendo cualquier margen positivo.
+  const marginCentavos = pos.usdt > 0 ? (price - pos.avgCost) * 100 : 0;
+  const expensive = snapshot && ((snapshot.z != null && snapshot.z >= TRADER.sellZ) ||
+                                 (snapshot.rsi != null && snapshot.rsi >= TRADER.sellRsi));
+  if (pos.usdt > 0 && (marginCentavos >= TRADER.takeProfitCentavos || (expensive && marginCentavos > 0))) {
+    const sellMxn = Math.min(TRADER.sellChunk, pos.usdt * price);
+    action = await execute('trader', 'sell', sellMxn, price, null, now);
+  }
+  // ¿Comprar? hay señal de dip y no excedemos el tope
+  else if ((signal?.tier === 'BUY' || signal?.tier === 'STRONG_BUY')) {
+    const posMxn = pos.usdt * price;
+    const chunk = signal.tier === 'STRONG_BUY' ? TRADER.strongBuyChunk : TRADER.buyChunk;
+    if (posMxn + chunk <= TRADER.maxPositionMxn) {
+      action = await execute('trader', 'buy', chunk, price, signal.id, now);
+    }
+  }
+
+  if (action) lastTraderTs = now;
+  return action;
 }

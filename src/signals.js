@@ -8,10 +8,11 @@ import { zscore, rsi, bollinger } from './indicators.js';
 import { activeBlackout } from './calendar.js';
 
 export async function evaluateSignal(now = Date.now()) {
-  const since = now - Math.max(CONFIG.PREMIUM_WINDOW_MIN, CONFIG.ZSCORE_WINDOW_MIN) * 60_000;
-  const [bitsoCloses, spotCloses] = await Promise.all([
+  const since = now - Math.max(CONFIG.PREMIUM_WINDOW_MIN, CONFIG.ZSCORE_WINDOW_MIN, CONFIG.BTC_WINDOW_MIN) * 60_000;
+  const [bitsoCloses, spotCloses, btcCloses] = await Promise.all([
     minuteCloses('bitso', since),
     minuteCloses('spot', since),
+    minuteCloses('btc', since),
   ]);
   if (bitsoCloses.length < CONFIG.BOLLINGER_PERIOD + 1) return null; // aún calentando
 
@@ -68,6 +69,18 @@ export async function evaluateSignal(now = Date.now()) {
     }
   }
 
+  // 6) Correlación BTC: BTC subiendo fuerte → rotación de USDT a BTC → presión
+  //    bajista en la demanda de USDT (oportunidad de compra barata).
+  let btcZ = null;
+  if (btcCloses.length > 30) {
+    const bc = btcCloses.map(c => c.price);
+    btcZ = zscore(bc.slice(-CONFIG.BTC_WINDOW_MIN, -1), bc[bc.length - 1]);
+    if (btcZ >= CONFIG.BTC_PUMP_Z) {
+      score += 1;
+      reasons.push(`BTC en alza fuerte (z ${btcZ.toFixed(2)}) — suele aliviar la demanda de USDT`);
+    }
+  }
+
   // Tier por score
   let tier = null;
   if (score >= CONFIG.SCORE_STRONG) tier = 'STRONG_BUY';
@@ -83,19 +96,23 @@ export async function evaluateSignal(now = Date.now()) {
   }
 
   const id = await insertSignal({ ts: now, tier, score, price, reasons });
-  return { id, ts: now, tier, score, price, reasons, indicators: { z, rsi: r, bollinger: bb, premium } };
+  return { id, ts: now, tier, score, price, reasons, indicators: { z, rsi: r, bollinger: bb, premium, btcZ } };
 }
 
-// Snapshot de indicadores para el dashboard (sin generar señal)
+// Snapshot de indicadores para el dashboard y el trader (sin generar señal)
 export async function indicatorSnapshot(now = Date.now()) {
   const since = now - CONFIG.PREMIUM_WINDOW_MIN * 60_000;
-  const closes = (await minuteCloses('bitso', since)).map(c => c.price);
+  const [bitso, btc] = await Promise.all([minuteCloses('bitso', since), minuteCloses('btc', since)]);
+  const closes = bitso.map(c => c.price);
   if (closes.length < 5) return null;
   const price = closes[closes.length - 1];
+  const bc = btc.map(c => c.price);
   return {
     price,
     z: closes.length > CONFIG.BOLLINGER_PERIOD ? zscore(closes.slice(-CONFIG.ZSCORE_WINDOW_MIN, -1), price) : null,
     rsi: rsi(closes, CONFIG.RSI_PERIOD),
     bollinger: bollinger(closes, CONFIG.BOLLINGER_PERIOD, CONFIG.BOLLINGER_K),
+    btc: bc.length ? bc[bc.length - 1] : null,
+    btcZ: bc.length > 30 ? zscore(bc.slice(-CONFIG.BTC_WINDOW_MIN, -1), bc[bc.length - 1]) : null,
   };
 }

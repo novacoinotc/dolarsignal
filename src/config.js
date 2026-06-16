@@ -28,6 +28,7 @@ export const CONFIG = {
   // ── Cadencias de polling ──────────────────────────────────
   BITSO_POLL_MS: 15_000,
   SPOT_POLL_MS: 60_000,
+  BTC_POLL_MS: 30_000,
   NEWS_POLL_MS: 5 * 60_000,
   EVAL_POLL_MS: 60_000,
 
@@ -43,6 +44,8 @@ export const CONFIG = {
   DROP_LOOKBACK_MIN: 5,           // caída rápida: ventana
   DROP_PCT: -0.0005,              // -0.05% en 5 min
   PREMIUM_WINDOW_MIN: 240,        // ventana para z-score de la prima USDT
+  BTC_WINDOW_MIN: 60,             // ventana para el z-score de BTC
+  BTC_PUMP_Z: 1.5,                // BTC subiendo fuerte → presión bajista en USDT (buena compra)
   SCORE_WATCH: 1.5,
   SCORE_BUY: 2.5,
   SCORE_STRONG: 4.0,

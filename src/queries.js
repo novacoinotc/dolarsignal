@@ -1,6 +1,7 @@
 // Consultas compartidas entre el worker (Railway) y las funciones API de Vercel
 import { q, pool } from './db.js';
 import { CONFIG, tradingDate } from './config.js';
+import { ACCUMULATORS, dayPlan } from './strategies.js';
 
 // ── Escrituras (worker) ─────────────────────────────────────
 
@@ -44,14 +45,13 @@ export async function insertNews(n) {
   return res.rowCount > 0;
 }
 
-// ── Lecturas ────────────────────────────────────────────────
+// ── Lecturas de mercado ─────────────────────────────────────
 
 export async function lastTick(source) {
   const rows = await q(`SELECT * FROM ticks WHERE source = $1 ORDER BY ts DESC LIMIT 1`, [source]);
   return rows[0] || null;
 }
 
-// Cierres por minuto (último precio de cada minuto)
 export function minuteCloses(source, sinceTs) {
   return q(
     `SELECT bucket, price FROM (
@@ -63,7 +63,6 @@ export function minuteCloses(source, sinceTs) {
   );
 }
 
-// Precio más cercano a un timestamp (±5 min)
 export async function priceNear(source, ts) {
   const rows = await q(
     `SELECT price FROM ticks WHERE source = $1 AND ts BETWEEN $2 AND $3 ORDER BY ABS(ts - $4) LIMIT 1`,
@@ -73,24 +72,29 @@ export async function priceNear(source, ts) {
 }
 
 export async function spent(date, strategy) {
+  // Para el trader, 'spent' = compras netas (buy − sell); para acumuladoras = todo.
   const rows = await q(
-    `SELECT COALESCE(SUM(mxn), 0) AS spent FROM trades WHERE date = $1 AND strategy = $2`,
+    `SELECT COALESCE(SUM(CASE WHEN reason = 'sell' THEN -mxn ELSE mxn END), 0) AS spent
+     FROM trades WHERE date = $1 AND strategy = $2`,
     [date, strategy]
   );
   return Number(rows[0].spent);
 }
 
+// ── Feeds dashboard ─────────────────────────────────────────
+
 export function recentSignals(limit = 50) {
   return q(`SELECT * FROM signals ORDER BY ts DESC LIMIT $1`, [limit]);
 }
 
-export async function recentBotTrades(limit = 60) {
-  const trades = await q(`SELECT * FROM trades WHERE strategy = 'bot' ORDER BY ts DESC LIMIT $1`, [limit]);
+// Compras recientes de las estrategias destacadas (para gráfica y tabla)
+export async function recentTrades(limit = 80) {
+  const trades = await q(
+    `SELECT * FROM trades WHERE reason IN ('signal','buy','sell') ORDER BY ts DESC LIMIT $1`, [limit]
+  );
   if (!trades.length) return trades;
   const ids = trades.map(t => t.id);
-  const outcomes = await q(
-    `SELECT * FROM outcomes WHERE kind = 'trade' AND ref_id = ANY($1)`, [ids]
-  );
+  const outcomes = await q(`SELECT * FROM outcomes WHERE kind = 'trade' AND ref_id = ANY($1)`, [ids]);
   for (const t of trades) t.outcomes = outcomes.filter(o => o.ref_id === t.id);
   return trades;
 }
@@ -99,30 +103,52 @@ export function recentNews(limit = 30) {
   return q(`SELECT * FROM news ORDER BY ts DESC LIMIT $1`, [limit]);
 }
 
-// Comparativa diaria bot vs TWAP: centavos ganados por USDT y ahorro total MXN
+// ── Rendimiento de las acumuladoras ─────────────────────────
+
+const ACC_KEYS = Object.keys(ACCUMULATORS);
+
+// Resumen GLOBAL por estrategia (precio promedio, centavos vs TWAP, ahorro total)
 export async function performance() {
   const rows = await q(`
-    SELECT date, strategy,
-           SUM(mxn) AS mxn, SUM(usdt) AS usdt,
-           SUM(CASE WHEN reason = 'signal' THEN mxn ELSE 0 END) AS signal_mxn,
-           COUNT(CASE WHEN reason = 'signal' THEN 1 END) AS signal_trades
-    FROM trades GROUP BY date, strategy ORDER BY date DESC
-  `);
-  const byDate = {};
-  for (const r of rows) (byDate[r.date] ??= {})[r.strategy] = r;
-  return Object.entries(byDate).map(([date, s]) => {
-    const bot = s.bot, twap = s.twap;
-    const botAvg = bot && Number(bot.usdt) > 0 ? Number(bot.mxn) / Number(bot.usdt) : null;
-    const twapAvg = twap && Number(twap.usdt) > 0 ? Number(twap.mxn) / Number(twap.usdt) : null;
-    const centavosSaved = botAvg && twapAvg ? (twapAvg - botAvg) * 100 : null;
+    SELECT strategy, SUM(mxn) AS mxn, SUM(usdt) AS usdt,
+           COUNT(CASE WHEN reason IN ('signal','buy') THEN 1 END) AS signal_trades
+    FROM trades WHERE strategy = ANY($1) GROUP BY strategy
+  `, [ACC_KEYS]);
+  const by = {};
+  for (const r of rows) by[r.strategy] = { mxn: Number(r.mxn), usdt: Number(r.usdt), signalTrades: Number(r.signal_trades) };
+  const twapAvg = by.twap && by.twap.usdt > 0 ? by.twap.mxn / by.twap.usdt : null;
+
+  return ACC_KEYS.map(key => {
+    const s = by[key];
+    const avg = s && s.usdt > 0 ? s.mxn / s.usdt : null;
+    const centavosSaved = avg && twapAvg ? (twapAvg - avg) * 100 : null;
     return {
-      date, botAvg, twapAvg, centavosSaved,
-      botUsdt: Number(bot?.usdt || 0),
-      botMxn: Number(bot?.mxn || 0),
-      signalTrades: Number(bot?.signal_trades || 0),
-      signalMxn: Number(bot?.signal_mxn || 0),
-      savedMxn: centavosSaved !== null ? (centavosSaved / 100) * Number(bot?.usdt || 0) : null,
+      strategy: key, label: ACCUMULATORS[key].label, color: ACCUMULATORS[key].color,
+      avg, centavosSaved,
+      usdt: s ? s.usdt : 0, mxn: s ? s.mxn : 0,
+      signalTrades: s ? s.signalTrades : 0,
+      savedMxn: centavosSaved !== null ? (centavosSaved / 100) * (s ? s.usdt : 0) : null,
     };
+  });
+}
+
+// Detalle diario por estrategia (para la tabla histórica)
+export async function dailyPerformance(days = 30) {
+  const rows = await q(`
+    SELECT date, strategy, SUM(mxn) AS mxn, SUM(usdt) AS usdt
+    FROM trades WHERE strategy = ANY($1)
+    GROUP BY date, strategy ORDER BY date DESC
+  `, [ACC_KEYS]);
+  const byDate = {};
+  for (const r of rows) (byDate[r.date] ??= {})[r.strategy] = { avg: Number(r.usdt) > 0 ? Number(r.mxn) / Number(r.usdt) : null };
+  return Object.entries(byDate).slice(0, days).map(([date, s]) => {
+    const twapAvg = s.twap?.avg ?? null;
+    const cells = {};
+    for (const k of ACC_KEYS) {
+      const avg = s[k]?.avg ?? null;
+      cells[k] = { avg, centavos: avg && twapAvg ? (twapAvg - avg) * 100 : null };
+    }
+    return { date, cells };
   });
 }
 
@@ -131,8 +157,8 @@ export function signalQuality() {
   return q(`
     SELECT s.tier, o.horizon_min,
            COUNT(*)::INT AS n,
-           AVG(o.delta_centavos) AS avg_delta,
-           SUM(CASE WHEN o.delta_centavos > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS hit_rate
+           AVG(o.delta_centavos)::float8 AS avg_delta,
+           (SUM(CASE WHEN o.delta_centavos > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*))::float8 AS hit_rate
     FROM outcomes o JOIN signals s ON s.id = o.ref_id
     WHERE o.kind = 'signal'
     GROUP BY s.tier, o.horizon_min
@@ -140,8 +166,98 @@ export function signalQuality() {
   `);
 }
 
+// Estado de presupuesto de hoy para cada acumuladora
 export async function todayStats(now = Date.now()) {
   const date = tradingDate(now);
-  const [botSpent, twapSpent] = await Promise.all([spent(date, 'bot'), spent(date, 'twap')]);
-  return { date, botSpent, twapSpent, budget: CONFIG.DAILY_BUDGET_MXN };
+  const strategies = {};
+  for (const [key, cfg] of Object.entries(ACCUMULATORS)) {
+    const plan = dayPlan(cfg, now);
+    strategies[key] = { label: cfg.label, color: cfg.color, spent: await spent(date, key), budget: plan.budget };
+  }
+  return { date, strategies, budget: CONFIG.DAILY_BUDGET_MXN };
+}
+
+// ── Trader: posición y P&L ──────────────────────────────────
+
+// Posición actual del trader (costo promedio ponderado de las compras netas)
+export async function traderPosition() {
+  const rows = await q(`SELECT reason, mxn, usdt FROM trades WHERE strategy = 'trader' ORDER BY ts`);
+  let usdt = 0, cost = 0;
+  for (const r of rows) {
+    if (r.reason === 'buy') { usdt += Number(r.usdt); cost += Number(r.mxn); }
+    else if (r.reason === 'sell') {
+      const avg = usdt > 0 ? cost / usdt : 0;
+      cost -= avg * Number(r.usdt); usdt -= Number(r.usdt);
+      if (usdt < 1e-6) { usdt = 0; cost = 0; }
+    }
+  }
+  return { usdt, avgCost: usdt > 0 ? cost / usdt : 0 };
+}
+
+// Ganancia realizada del trader (FIFO por costo promedio)
+export async function traderPnl() {
+  const rows = await q(`SELECT reason, mxn, usdt, ts FROM trades WHERE strategy = 'trader' ORDER BY ts`);
+  let usdt = 0, cost = 0, realized = 0, sells = 0, buys = 0;
+  for (const r of rows) {
+    if (r.reason === 'buy') { usdt += Number(r.usdt); cost += Number(r.mxn); buys++; }
+    else if (r.reason === 'sell') {
+      const avg = usdt > 0 ? cost / usdt : 0;
+      realized += (Number(r.mxn) - avg * Number(r.usdt));
+      cost -= avg * Number(r.usdt); usdt -= Number(r.usdt); sells++;
+      if (usdt < 1e-6) { usdt = 0; cost = 0; }
+    }
+  }
+  return { realizedMxn: realized, openUsdt: usdt, avgCost: usdt > 0 ? cost / usdt : 0, buys, sells };
+}
+
+// ── Monitor del efecto viernes ──────────────────────────────
+// Compara el precio USDT/MXN justo antes del cierre (vie 14:30 CDMX) contra el
+// promedio del fin de semana siguiente, para medir cuánto sube por baja liquidez.
+export async function fridayEffect(weeks = 8) {
+  const ticks = await q(
+    `SELECT ts, price FROM ticks WHERE source = 'bitso' AND ts >= $1 ORDER BY ts`,
+    [Date.now() - weeks * 7 * 86_400_000]
+  );
+  if (!ticks.length) return [];
+  const tz = CONFIG.TIMEZONE;
+  const parts = ts => {
+    const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false })
+      .formatToParts(new Date(ts));
+    const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(p.find(x => x.type === 'weekday').value);
+    const min = (Number(p.find(x => x.type === 'hour').value) % 24) * 60 + Number(p.find(x => x.type === 'minute').value);
+    const date = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(ts));
+    return { dow, min, date };
+  };
+  // Precio de cierre de cada viernes (~14:30) y promedio del fin de semana
+  const fridayClose = new Map();   // weekKey -> {price, date}
+  const weekend = new Map();       // weekKey -> {sum, n}
+  for (const t of ticks) {
+    const { dow, min, date } = parts(t.ts);
+    if (dow === 5 && min >= 14 * 60 && min <= 15 * 60) {
+      fridayClose.set(date, { price: Number(t.price), date });
+    }
+    if (dow === 6 || dow === 0) {
+      const wk = weekendKey(t.ts, tz);
+      const w = weekend.get(wk) || { sum: 0, n: 0 };
+      w.sum += Number(t.price); w.n++; weekend.set(wk, w);
+    }
+  }
+  const out = [];
+  for (const [date, fc] of fridayClose) {
+    const wk = weekendKey(Date.parse(date + 'T20:30:00Z'), tz);
+    const w = weekend.get(wk);
+    if (!w) continue;
+    const wkAvg = w.sum / w.n;
+    out.push({ friday: date, closePrice: fc.price, weekendAvg: wkAvg, deltaCentavos: (wkAvg - fc.price) * 100 });
+  }
+  return out.slice(-weeks);
+}
+
+function weekendKey(ts, tz) {
+  // Clave del fin de semana = fecha del sábado (aprox por desplazamiento)
+  const d = new Date(ts);
+  const wd = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(d);
+  const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(wd);
+  const satTs = ts - ((dow === 0 ? 1 : 0)) * 86_400_000;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(satTs));
 }

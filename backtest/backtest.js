@@ -1,75 +1,98 @@
-// Backtest de 12 meses de la estrategia DolarSignal.
+// Backtest de 12 meses de TODAS las estrategias de DolarSignal.
 //
-// DATOS: USD/MXN spot por hora de Yahoo Finance (12 meses, ~6,300 barras).
-// El instrumento real (USDT/MXN en Bitso) = USD/MXN × (1 + prima ~0.03% estable).
-// Como la métrica clave (centavos ahorrados bot vs TWAP) es una DIFERENCIA sobre
-// la misma serie, una prima multiplicativa constante se cancela: los centavos
-// ahorrados son los mismos usando spot que usando spot×(1+prima). Ver README del backtest.
+// DATOS:
+//  - USD/MXN spot por hora (Yahoo). Proxy del USDT/MXN: USDT/MXN = USD/MXN×(1+prima).
+//    Como las métricas son DIFERENCIAS entre estrategias sobre la misma serie, una
+//    prima multiplicativa constante se cancela → los centavos son válidos.
+//  - BTC/USD por hora (Coinbase) para la señal de correlación cripto.
 //
-// LÓGICA: en cada barra horaria se evalúan los mismos indicadores del bot en vivo
-// (z-score de la media móvil, RSI, Bollinger). Score → WATCH/BUY/STRONG_BUY.
-// El bot pondera su compra diaria de $20M MXN hacia las barras con señal (dips);
-// el TWAP compra parejo cada barra. avg_twap − avg_bot = centavos ganados por USDT.
+// Simula hora por hora, de forma CAUSAL (sin ver el futuro), las 7 estrategias del
+// laboratorio en vivo: pareja, cauteloso, agresivo, sesiones, viernes, inteligente
+// y trader. Reporta centavos ganados vs la compra pareja (TWAP) y el P&L del trader.
 
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { zscore, rsi, bollinger } from '../src/indicators.js';
+import { fetchBtcHourly } from './btc.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CACHE = path.join(HERE, 'usdmxn-1h.json');
 const TZ = 'America/Mexico_City';
 
-// ── Parámetros (espejo de src/config.js, dimensionless en cualquier timeframe) ──
 const P = {
   DAILY_BUDGET_MXN: 20_000_000,
-  ZSCORE_WINDOW: 60,      // barras
-  ZSCORE_DIP: -1.5, ZSCORE_SOFT: -1.0,
+  ZSCORE_WINDOW: 60, ZSCORE_DIP: -1.5, ZSCORE_SOFT: -1.0,
   RSI_PERIOD: 14, RSI_OVERSOLD: 30, RSI_EXTREME: 20,
-  BOLL_PERIOD: 20, BOLL_K: 2,
-  WARMUP: 80,
-  SCORE_WATCH: 1.5, SCORE_BUY: 2.5, SCORE_STRONG: 4.0,
-  // Estrategia por defecto del reporte detallado (se sobreescribe en el sweep).
-  STRAT: { type: 'boost', buy: 2, strong: 3 },
-  HORIZONS: [1, 4, 24],   // barras (1h, 4h, 24h) para evaluar resultado de señales
+  BOLL_PERIOD: 20, BOLL_K: 2, BTC_WINDOW: 60, BTC_PUMP_Z: 1.5,
+  WARMUP: 80, SCORE_WATCH: 1.5, SCORE_BUY: 2.5, SCORE_STRONG: 4.0,
+  HORIZONS: [1, 4, 24],
+  FRIDAY_CUTOFF_MIN: 14 * 60 + 30, WEEKEND_DAYS: 2,
+  SLOT_MIN: 60,                 // en el backtest, 1 "slot" = 1 barra horaria
+  CATCHUP_SLOTS: 3,
+  // Trader: compra barato, toma ganancia al subir
+  TRADER: { buyChunk: 1e6, strongChunk: 2e6, sellChunk: 1.5e6, maxPos: 8e6, takeProfit: 4, sellZ: 1.5, sellRsi: 70 },
 };
+
+// Estrategias acumuladoras (espejo de src/strategies.js)
+const ACC = {
+  twap:       { label: 'Pareja (TWAP)', slotPace: 1.0, buyPct: 0,    strongPct: 0,    session: false, friday: false },
+  bot:        { label: 'Cauteloso',     slotPace: 1.0, buyPct: 0.02, strongPct: 0.05, session: false, friday: false },
+  aggressive: { label: 'Agresivo',      slotPace: 0.4, buyPct: 0.08, strongPct: 0.20, session: false, friday: false },
+  sessions:   { label: 'Sesiones',      slotPace: 0.6, buyPct: 0.05, strongPct: 0.12, session: true,  friday: false },
+  friday:     { label: 'Viernes',       slotPace: 1.0, buyPct: 0.02, strongPct: 0.05, session: false, friday: true  },
+  smart:      { label: 'Inteligente',   slotPace: 0.4, buyPct: 0.08, strongPct: 0.20, session: true,  friday: true  },
+};
+const SESSION_W = { europea: 1.3, americana: 1.4, otros: 0.5 };
 
 async function fetchYahoo() {
   if (existsSync(CACHE)) {
-    const cached = JSON.parse(readFileSync(CACHE, 'utf8'));
-    console.log(`Usando cache: ${cached.length} barras (${CACHE})`);
-    return cached;
+    const c = JSON.parse(readFileSync(CACHE, 'utf8'));
+    console.log(`USD/MXN cache: ${c.length} barras`);
+    return c;
   }
-  console.log('Descargando USD/MXN por hora (12 meses) de Yahoo Finance…');
+  console.log('Descargando USD/MXN por hora (12 meses) de Yahoo…');
   const url = 'https://query1.finance.yahoo.com/v8/finance/chart/MXN=X?interval=1h&range=1y';
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
-  const j = await res.json();
-  const r = j.chart.result[0];
-  const ts = r.timestamp;
-  const closes = r.indicators.quote[0].close;
+  const r = (await res.json()).chart.result[0];
   const bars = [];
-  for (let i = 0; i < ts.length; i++) {
-    if (closes[i] != null) bars.push({ ts: ts[i] * 1000, price: closes[i] });
+  for (let i = 0; i < r.timestamp.length; i++) {
+    if (r.indicators.quote[0].close[i] != null) bars.push({ ts: r.timestamp[i] * 1000, price: r.indicators.quote[0].close[i] });
   }
   mkdirSync(HERE, { recursive: true });
   writeFileSync(CACHE, JSON.stringify(bars));
-  console.log(`Guardadas ${bars.length} barras en ${CACHE}`);
+  console.log(`USD/MXN: ${bars.length} barras`);
   return bars;
 }
 
+const parts = ts => {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date(ts));
+  const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(p.find(x => x.type === 'weekday').value);
+  const min = (Number(p.find(x => x.type === 'hour').value) % 24) * 60 + Number(p.find(x => x.type === 'minute').value);
+  return { dow, min };
+};
 const cdmxDate = ts => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(ts));
-const yyyymm = ts => cdmxDate(ts).slice(0, 7);
+const sessionOf = min => (min >= 120 && min < 480) ? 'europea' : (min >= 480 && min < 900) ? 'americana' : 'otros';
 
-function evalSignal(closes) {
-  const price = closes[closes.length - 1];
+// Señal causal en la barra i (solo datos pasados)
+function signalAt(prices, btcByTs, bars, i) {
+  const price = prices[i];
   let score = 0;
-  const z = zscore(closes.slice(-P.ZSCORE_WINDOW, -1), price);
+  const z = zscore(prices.slice(Math.max(0, i - P.ZSCORE_WINDOW), i), price);
   if (z <= P.ZSCORE_DIP) score += 2; else if (z <= P.ZSCORE_SOFT) score += 1;
-  const r = rsi(closes, P.RSI_PERIOD);
+  const win = prices.slice(0, i + 1);
+  const r = rsi(win, P.RSI_PERIOD);
   if (r !== null) { if (r < P.RSI_EXTREME) score += 2; else if (r < P.RSI_OVERSOLD) score += 1; }
-  const bb = bollinger(closes, P.BOLL_PERIOD, P.BOLL_K);
+  const bb = bollinger(win, P.BOLL_PERIOD, P.BOLL_K);
   if (bb && price <= bb.lower) score += 1;
+  // BTC: alza fuerte → USDT barato
+  const btcWin = [];
+  for (let k = Math.max(0, i - P.BTC_WINDOW); k <= i; k++) { const b = btcByTs.get(bars[k].ts); if (b) btcWin.push(b); }
+  if (btcWin.length > 30) {
+    const bz = zscore(btcWin.slice(0, -1), btcWin[btcWin.length - 1]);
+    if (bz >= P.BTC_PUMP_Z) score += 1;
+  }
   let tier = null;
   if (score >= P.SCORE_STRONG) tier = 'STRONG_BUY';
   else if (score >= P.SCORE_BUY) tier = 'BUY';
@@ -77,205 +100,170 @@ function evalSignal(closes) {
   return { tier, score, z, rsi: r };
 }
 
-// Simulación causal de un día. Devuelve USDT comprado gastando exactamente B.
-//  - 'boost': slot base = restante/barras-restantes; en señal compra boost× el slot.
-//  - 'reserve': TWAP sobre (1-frac) del presupuesto en todas las barras + reserva
-//               frac que solo se despliega en barras con señal (resto al cierre).
-function simDay(idxs, bars, sig, strat) {
-  const B = P.DAILY_BUDGET_MXN, n = idxs.length;
-  let usdt = 0;
-
-  if (strat.type === 'boost') {
-    let remaining = B;
-    for (let k = 0; k < n; k++) {
-      const price = bars[idxs[k]].price, t = sig[idxs[k]]?.tier;
-      const base = remaining / (n - k);
-      const boost = t === 'STRONG_BUY' ? strat.strong : t === 'BUY' ? strat.buy : 1;
-      let buy = Math.min(remaining, base * boost);
-      if (k === n - 1) buy = remaining;
-      usdt += buy / price; remaining -= buy;
-    }
-    return usdt;
-  }
-
-  // reserve
-  const twapPart = B * (1 - strat.frac), perBar = twapPart / n;
-  let reserve = B * strat.frac;
-  const sigBars = [];
-  for (let k = 0; k < n; k++) {
-    const price = bars[idxs[k]].price, t = sig[idxs[k]]?.tier;
-    usdt += perBar / price; // baseline TWAP
-    if (t === 'BUY' || t === 'STRONG_BUY') sigBars.push(k);
-  }
-  // Despliegue causal de la reserva: en cada señal compra una fracción del reserve
-  // restante (más para STRONG); lo que quede se compra en la última barra.
-  let rem = reserve;
-  for (let k = 0; k < n; k++) {
-    const price = bars[idxs[k]].price, t = sig[idxs[k]]?.tier;
-    if ((t === 'BUY' || t === 'STRONG_BUY') && rem > 0) {
-      const chunk = Math.min(rem, B * (t === 'STRONG_BUY' ? strat.strongChunk : strat.buyChunk));
-      usdt += chunk / price; rem -= chunk;
-    }
-    if (k === n - 1 && rem > 0) { usdt += rem / price; rem = 0; }
-  }
-  return usdt;
+function dayBudget(cfg, dow) {
+  // NOTA: el forex no opera fin de semana, así que en el backtest NO inflamos el
+  // presupuesto del viernes (eso haría comprar 40% más volumen que las demás y la
+  // comparación sería injusta). Aquí "Viernes" solo prueba el TIMING: concentrar la
+  // compra del viernes antes del cierre 14:30. El efecto viernes real (prima de fin
+  // de semana en Bitso) solo se mide EN VIVO. Ver README.
+  if (cfg.friday && dow === 5) return { budget: P.DAILY_BUDGET_MXN, endMin: P.FRIDAY_CUTOFF_MIN };
+  return { budget: P.DAILY_BUDGET_MXN, endMin: 1440 };
 }
 
-function run(bars) {
-  // 1) Señal por barra (a partir del warmup)
-  const sig = new Array(bars.length).fill(null);
-  for (let i = P.WARMUP; i < bars.length; i++) {
-    const closes = bars.slice(Math.max(0, i - P.ZSCORE_WINDOW - 5), i + 1).map(b => b.price);
-    sig[i] = evalSignal(closes);
-  }
+function run(bars, btcByTs) {
+  const prices = bars.map(b => b.price);
+  const sig = bars.map((_, i) => i < P.WARMUP ? null : signalAt(prices, btcByTs, bars, i));
 
-  // 2) Agrupar barras por día CDMX
+  // Agrupar índices por día CDMX
   const days = new Map();
-  for (let i = 0; i < bars.length; i++) {
-    if (i < P.WARMUP) continue;
+  for (let i = P.WARMUP; i < bars.length; i++) {
     const d = cdmxDate(bars[i].ts);
     if (!days.has(d)) days.set(d, []);
     days.get(d).push(i);
   }
 
-  // 3) Simular cada día de forma CAUSAL (sin hindsight): en cada barra solo se
-  //    conoce la señal actual y el presupuesto restante — igual que el bot en vivo.
-  const daily = [];
+  // Acumuladoras: por estrategia, totales globales y por día
+  const totals = {}; const perDay = {};
+  for (const k of Object.keys(ACC)) { totals[k] = { mxn: 0, usdt: 0, buys: 0 }; perDay[k] = {}; }
+
   for (const [date, idxs] of days) {
-    if (idxs.length < 2) continue;
-    const B = P.DAILY_BUDGET_MXN;
-    const n = idxs.length;
-    let twapUsdt = 0;
-    for (const i of idxs) twapUsdt += (B / n) / bars[i].price;
-    const botUsdt = simDay(idxs, bars, sig, P.STRAT);
-    const botAvg = B / botUsdt, twapAvg = B / twapUsdt;
-    daily.push({ date, month: date.slice(0, 7), botAvg, twapAvg, botUsdt, twapUsdt,
-      centavos: (twapAvg - botAvg) * 100,
-      buys: idxs.filter(i => ['BUY', 'STRONG_BUY'].includes(sig[i]?.tier)).length });
+    for (const [k, cfg] of Object.entries(ACC)) {
+      const dow = parts(bars[idxs[0]].ts).dow;
+      const { budget, endMin } = dayBudget(cfg, dow);
+      if (budget < 1) { perDay[k][date] = null; continue; }
+      // Barras válidas del día (dentro de la ventana endMin)
+      const valid = idxs.filter(i => parts(bars[i].ts).min <= endMin);
+      if (!valid.length) { perDay[k][date] = null; continue; }
+      let remaining = budget, usdt = 0, mxn = 0, buys = 0;
+      // Compras por señal (causal): al recorrer las barras en orden
+      for (let vi = 0; vi < valid.length; vi++) {
+        const i = valid[vi];
+        const price = prices[i], t = sig[i]?.tier, min = parts(bars[i].ts).min;
+        // 1) compra oportunista por señal
+        if ((t === 'BUY' || t === 'STRONG_BUY') && (cfg.buyPct > 0)) {
+          const pct = t === 'STRONG_BUY' ? cfg.strongPct : cfg.buyPct;
+          const amt = Math.min(remaining, budget * pct);
+          if (amt > 0) { usdt += amt / price; mxn += amt; remaining -= amt; buys++; }
+        }
+        // 2) slot de relleno
+        const slotsLeft = valid.length - vi;
+        const evenPace = remaining / slotsLeft;
+        const pace = slotsLeft <= P.CATCHUP_SLOTS ? 1 : cfg.slotPace;
+        const w = cfg.session ? SESSION_W[sessionOf(min)] : 1;
+        let slot = Math.min(remaining, evenPace * pace * w);
+        if (vi === valid.length - 1) slot = remaining;   // última barra gasta todo
+        if (slot > 0) { usdt += slot / price; mxn += slot; remaining -= slot; }
+      }
+      totals[k].mxn += mxn; totals[k].usdt += usdt; totals[k].buys += buys;
+      perDay[k][date] = usdt > 0 ? mxn / usdt : null;
+    }
   }
 
-  // 4) Calidad de señales: delta a futuro por tier/horizonte
+  // Trader (compra/vende en puntos clave) — causal sobre todas las barras
+  const trader = runTrader(bars, prices, btcByTs, sig);
+
+  // Calidad de señales
   const quality = {};
   for (let i = P.WARMUP; i < bars.length; i++) {
-    const t = sig[i]?.tier;
-    if (!t) continue;
+    const t = sig[i]?.tier; if (!t) continue;
     for (const h of P.HORIZONS) {
-      const j = i + h;
-      if (j >= bars.length) continue;
-      const delta = (bars[j].price - bars[i].price) * 100;
+      const j = i + h; if (j >= bars.length) continue;
+      const delta = (prices[j] - prices[i]) * 100;
       const key = `${t}|${h}`;
       (quality[key] ??= { n: 0, sum: 0, hits: 0 });
       quality[key].n++; quality[key].sum += delta; if (delta > 0) quality[key].hits++;
     }
   }
 
-  return { daily, quality, sig };
+  return { sig, totals, perDay, days, trader, quality };
 }
 
-function report(bars, { daily, quality, sig }) {
+function runTrader(bars, prices, btcByTs, sig) {
+  const T = P.TRADER;
+  let usdt = 0, cost = 0, realized = 0, buys = 0, sells = 0;
+  for (let i = P.WARMUP; i < bars.length; i++) {
+    const price = prices[i], s = sig[i];
+    const win = prices.slice(0, i + 1);
+    const r = rsi(win, P.RSI_PERIOD);
+    const z = zscore(prices.slice(Math.max(0, i - P.ZSCORE_WINDOW), i), price);
+    const expensive = (z >= T.sellZ) || (r != null && r >= T.sellRsi);
+    const avg = usdt > 0 ? cost / usdt : 0;
+    const margin = usdt > 0 ? (price - avg) * 100 : 0;
+    if (usdt > 0 && (margin >= T.takeProfit || (expensive && margin > 0))) {
+      const sellMxn = Math.min(T.sellChunk, usdt * price);
+      const sellUsdt = sellMxn / price;
+      realized += sellMxn - avg * sellUsdt; cost -= avg * sellUsdt; usdt -= sellUsdt; sells++;
+      if (usdt < 1e-6) { usdt = 0; cost = 0; }
+    } else if (s?.tier === 'BUY' || s?.tier === 'STRONG_BUY') {
+      const chunk = s.tier === 'STRONG_BUY' ? T.strongChunk : T.buyChunk;
+      if (usdt * price + chunk <= T.maxPos) { usdt += chunk / price; cost += chunk; buys++; }
+    }
+  }
+  // Valor de la posición abierta al último precio (no realizado)
+  const last = prices[prices.length - 1];
+  const unrealized = usdt > 0 ? usdt * last - cost : 0;
+  return { realized, unrealized, openUsdt: usdt, avgCost: usdt > 0 ? cost / usdt : 0, buys, sells };
+}
+
+function report(bars, R) {
   const first = cdmxDate(bars[0].ts), last = cdmxDate(bars.at(-1).ts);
   const fmt = n => n.toLocaleString('es-MX', { maximumFractionDigits: 0 });
+  const twapAvg = R.totals.twap.mxn / R.totals.twap.usdt;
 
-  console.log('\n' + '═'.repeat(64));
-  console.log('  BACKTEST DolarSignal — USD/MXN por hora');
+  console.log('\n' + '═'.repeat(72));
+  console.log('  BACKTEST DolarSignal — 7 estrategias · USD/MXN+BTC por hora');
   console.log(`  Periodo: ${first} → ${last}  (${bars.length} barras horarias)`);
   console.log(`  Presupuesto: $${fmt(P.DAILY_BUDGET_MXN)} MXN/día`);
-  console.log('═'.repeat(64));
+  console.log('═'.repeat(72));
 
-  // Resumen mensual
-  const byMonth = new Map();
-  for (const d of daily) {
-    const m = byMonth.get(d.month) || { centWeighted: 0, usdt: 0, saved: 0, days: 0, buys: 0 };
-    m.centWeighted += d.centavos * d.botUsdt;
-    m.usdt += d.botUsdt;
-    m.saved += (d.centavos / 100) * d.botUsdt;
-    m.days++; m.buys += d.buys;
-    byMonth.set(d.month, m);
+  console.log('\n  RANKING — centavos ganados por USDT vs compra pareja (TWAP)\n');
+  console.log('  Estrategia        Precio prom.   Centavos/USDT   Ahorro 12m      # señales');
+  console.log('  ' + '─'.repeat(68));
+  const rows = Object.entries(ACC).map(([k, cfg]) => {
+    const t = R.totals[k];
+    const avg = t.usdt > 0 ? t.mxn / t.usdt : null;
+    const cents = avg ? (twapAvg - avg) * 100 : 0;
+    const saved = (cents / 100) * t.usdt;
+    return { k, label: cfg.label, avg, cents, saved, buys: t.buys };
+  });
+  rows.sort((a, b) => b.cents - a.cents);
+  for (const r of rows) {
+    const tag = r.k === 'twap' ? ' (ref)' : r.k === rows.filter(x => x.k !== 'twap')[0].k ? ' ★' : '';
+    console.log(`  ${(r.label + tag).padEnd(18)}${r.avg.toFixed(4).padStart(9)}     ${(r.cents >= 0 ? '+' : '') + r.cents.toFixed(4).padStart(8)}     $${fmt(r.saved).padStart(10)}     ${r.buys}`);
   }
-  console.log('\n  Mes        Centavos/USDT   Ahorro MXN     Días   Señales-compra');
-  console.log('  ' + '─'.repeat(60));
-  let totalSaved = 0, totalUsdt = 0, totalCentWeighted = 0, totalBuys = 0;
-  for (const [m, v] of [...byMonth].sort()) {
-    const cents = v.centWeighted / v.usdt;
-    console.log(`  ${m}     ${cents >= 0 ? '+' : ''}${cents.toFixed(3).padStart(7)}      $${fmt(v.saved).padStart(9)}    ${String(v.days).padStart(3)}    ${v.buys}`);
-    totalSaved += v.saved; totalUsdt += v.usdt; totalCentWeighted += v.centWeighted; totalBuys += v.buys;
-  }
-  console.log('  ' + '─'.repeat(60));
-  const avgCents = totalCentWeighted / totalUsdt;
-  console.log(`  TOTAL      ${avgCents >= 0 ? '+' : ''}${avgCents.toFixed(3).padStart(7)}      $${fmt(totalSaved).padStart(9)}    ${daily.length}    ${totalBuys}`);
 
-  // Anualizado
-  console.log('\n  ' + '═'.repeat(60));
-  console.log(`  Centavos promedio ganados por USDT:  ${avgCents >= 0 ? '+' : ''}${avgCents.toFixed(4)}`);
-  console.log(`  Ahorro total 12 meses:               $${fmt(totalSaved)} MXN`);
-  console.log(`  USDT comprado (paper):               ${fmt(totalUsdt)} USDT`);
-  console.log(`  Volumen comprado:                    $${fmt(totalUsdt * (bars.at(-1).price))} MXN aprox.`);
+  console.log('\n  TRADER (compra y vende en picos)');
+  console.log('  ' + '─'.repeat(68));
+  const t = R.trader;
+  console.log(`  Ganancia realizada:   $${fmt(t.realized)} MXN  (${t.buys} compras / ${t.sells} ventas)`);
+  console.log(`  Posición abierta:     ${fmt(t.openUsdt)} USDT @ ${t.avgCost.toFixed(4)}  (no realizado: $${fmt(t.unrealized)})`);
 
-  // Calidad de señales
-  console.log('\n  Calidad de señales (¿subió el precio después de la señal?)');
+  console.log('\n  CALIDAD DE SEÑALES (¿subió el precio después?)');
   console.log('  Tier         Horizonte   #señales   Δ prom (¢)   % acierto');
   console.log('  ' + '─'.repeat(58));
   for (const tier of ['WATCH', 'BUY', 'STRONG_BUY']) {
     for (const h of P.HORIZONS) {
-      const q = quality[`${tier}|${h}`];
-      if (!q) continue;
-      const avg = q.sum / q.n, hr = q.hits / q.n * 100;
-      console.log(`  ${tier.padEnd(12)} +${String(h).padStart(2)}h${' '.repeat(7)}${String(q.n).padStart(5)}    ${(avg >= 0 ? '+' : '') + avg.toFixed(2).padStart(6)}      ${hr.toFixed(0)}%`);
+      const q = R.quality[`${tier}|${h}`]; if (!q) continue;
+      console.log(`  ${tier.padEnd(12)} +${String(h).padStart(2)}h${' '.repeat(7)}${String(q.n).padStart(5)}    ${((q.sum / q.n) >= 0 ? '+' : '') + (q.sum / q.n).toFixed(2).padStart(6)}      ${(q.hits / q.n * 100).toFixed(0)}%`);
     }
   }
-
-  // Conteo de señales
-  const counts = { WATCH: 0, BUY: 0, STRONG_BUY: 0 };
-  for (const s of sig) if (s?.tier && counts[s.tier] !== undefined) counts[s.tier]++;
-  console.log(`\n  Señales generadas: WATCH ${counts.WATCH} · BUY ${counts.BUY} · STRONG_BUY ${counts.STRONG_BUY}`);
-  console.log('═'.repeat(64) + '\n');
-
-  return { avgCents, totalSaved, totalUsdt };
+  console.log('\n  Nota: backtest HORARIO; el bot en vivo opera a nivel minuto y captura');
+  console.log('  dips intra-hora que aquí no se ven → piso conservador. Ver README.\n');
+  console.log('═'.repeat(72) + '\n');
 }
 
-// Compara una estrategia contra TWAP sobre todo el periodo (causal)
-function evalStrat(bars, sig, days, strat) {
-  let centWeighted = 0, usdtTot = 0, saved = 0;
-  for (const [, idxs] of days) {
-    if (idxs.length < 2) continue;
-    const B = P.DAILY_BUDGET_MXN, n = idxs.length;
-    let twapUsdt = 0;
-    for (const i of idxs) twapUsdt += (B / n) / bars[i].price;
-    const botUsdt = simDay(idxs, bars, sig, strat);
-    const cent = (B / twapUsdt - B / botUsdt) * 100;
-    centWeighted += cent * botUsdt; usdtTot += botUsdt; saved += (cent / 100) * botUsdt;
-  }
-  return { cents: centWeighted / usdtTot, saved };
-}
-
+// ── Main ──
 const bars = await fetchYahoo();
-const result = run(bars);
-report(bars, result);
-
-// ── Sweep de estrategias ──────────────────────────────────────
-const { sig } = result;
-const days = new Map();
-for (let i = P.WARMUP; i < bars.length; i++) {
-  const d = cdmxDate(bars[i].ts);
-  if (!days.has(d)) days.set(d, []);
-  days.get(d).push(i);
+const btcBars = await fetchBtcHourly(bars[0].ts, bars.at(-1).ts);
+const btcByTs = new Map();
+// Alinear BTC a la barra horaria más cercana de USD/MXN
+{
+  const btcSorted = btcBars.slice().sort((a, b) => a.ts - b.ts);
+  let j = 0;
+  for (const b of bars) {
+    while (j + 1 < btcSorted.length && Math.abs(btcSorted[j + 1].ts - b.ts) <= Math.abs(btcSorted[j].ts - b.ts)) j++;
+    if (btcSorted[j] && Math.abs(btcSorted[j].ts - b.ts) < 2 * 3600_000) btcByTs.set(b.ts, btcSorted[j].price);
+  }
 }
-const fmt = n => n.toLocaleString('es-MX', { maximumFractionDigits: 0 });
-const STRATS = [
-  ['Boost 2×/3× (default)', { type: 'boost', buy: 2, strong: 3 }],
-  ['Boost 3×/6×', { type: 'boost', buy: 3, strong: 6 }],
-  ['Boost 4×/10×', { type: 'boost', buy: 4, strong: 10 }],
-  ['Reserva 30% solo-señales', { type: 'reserve', frac: 0.30, buyChunk: 0.015, strongChunk: 0.04 }],
-  ['Reserva 50% solo-señales', { type: 'reserve', frac: 0.50, buyChunk: 0.02, strongChunk: 0.06 }],
-  ['Reserva 70% solo-señales', { type: 'reserve', frac: 0.70, buyChunk: 0.03, strongChunk: 0.09 }],
-];
-console.log('  SENSIBILIDAD — estrategia de asignación vs TWAP (12 meses, causal)');
-console.log('  Estrategia                      Centavos/USDT   Ahorro MXN/año');
-console.log('  ' + '─'.repeat(62));
-for (const [name, strat] of STRATS) {
-  const r = evalStrat(bars, sig, days, strat);
-  console.log(`  ${name.padEnd(30)}   ${(r.cents >= 0 ? '+' : '') + r.cents.toFixed(4).padStart(8)}     $${fmt(r.saved).padStart(9)}`);
-}
-console.log('  ' + '─'.repeat(62));
-console.log('  (Edge real concentrado en +1-4h; el bot en vivo opera a nivel minuto,');
-console.log('   no horario — este backtest es un piso conservador. Ver README.)\n');
+console.log(`BTC alineado a ${btcByTs.size}/${bars.length} barras`);
+report(bars, run(bars, btcByTs));

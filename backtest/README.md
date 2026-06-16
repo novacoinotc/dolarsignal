@@ -1,42 +1,42 @@
-# Backtest — 12 meses
+# Backtest — 12 meses, 7 estrategias
 
-`node backtest/backtest.js` (sin dependencias; cachea los datos en `usdmxn-1h.json`).
+`node backtest/backtest.js` (sin dependencias; cachea datos en `usdmxn-1h.json` y `btc-1h.json`).
 
 ## Qué simula
 
-La pregunta del negocio: **dado que de todas formas debemos comprar ~$20M MXN de USDT al día, ¿programar esas compras con señales le gana al TWAP tonto (comprar parejo)?**
-
-Cada barra horaria evalúa los mismos indicadores del bot en vivo (z-score de la media móvil, RSI, Bollinger) → tier WATCH/BUY/STRONG_BUY. Luego se simula la compra diaria del presupuesto de forma **causal** (en cada barra solo se conoce la señal actual y el presupuesto restante — sin hindsight) y se compara el precio promedio pagado contra el TWAP. `avg_twap − avg_bot = centavos ganados por USDT`.
+La pregunta del negocio: **dado que de todos modos compramos ~$20M MXN de USDT al día, ¿qué forma de programar esas compras consigue el mejor precio?** Simula hora por hora, de forma **causal** (sin ver el futuro), las 7 estrategias del laboratorio en vivo y las compara contra la compra pareja (TWAP).
 
 ## Datos
 
-- **USD/MXN spot por hora, 12 meses, de Yahoo Finance** (~6,200 barras).
-- El instrumento real es USDT/MXN en Bitso, pero **Bitso no expone histórico OHLC público** y no hay fuente gratuita de USDT/MXN horario a 12 meses. Se usa USD/MXN como proxy: USDT/MXN = USD/MXN × (1 + prima ~0.03% estable). Como la métrica es una **diferencia** (bot − TWAP) sobre la misma serie, una prima multiplicativa constante **se cancela** — los centavos ahorrados son válidos.
+- **USD/MXN spot por hora, 12 meses (Yahoo)** como proxy del USDT/MXN. Como las métricas son **diferencias** entre estrategias sobre la misma serie, la prima USDT (~0.03%, constante) se cancela.
+- **BTC/USD por hora, 12 meses (Coinbase)** para la señal de correlación cripto (BTC en alza fuerte → USDT relativamente barato).
 
-## Resultados (periodo 2025-06-15 → 2026-06-15)
+## Resultados (2025-06-15 → 2026-06-15, causal)
 
-Edge vs TWAP, causal, $20M MXN/día (~$5.9 mil millones MXN/año comprados):
-
-| Estrategia de asignación | Centavos/USDT | Ahorro MXN/año |
+| Estrategia | Centavos/USDT vs pareja | Ahorro 12 meses |
 |---|---|---|
-| Boost 2×/3× (lógica actual del bot: slot-fill + boost) | +0.013 | $44,447 |
-| Boost 3×/6× | +0.024 | $83,388 |
-| **Reserva 30% solo-señales** | +0.104 | $357,715 |
-| **Reserva 50% solo-señales** | +0.176 | $604,181 |
-| **Reserva 70% solo-señales** | +0.243 | $836,088 |
+| 🔴 **Agresivo** | **+0.205¢** | **$705,442** |
+| 🧠 Inteligente | +0.102¢ | $352,090 |
+| 🟣 Sesiones | +0.062¢ | $212,762 |
+| 🟢 Cauteloso | +0.010¢ | $34,185 |
+| 🟰 Pareja (TWAP) | — (referencia) | $0 |
+| 🟡 Viernes | −0.013¢ | −$45,170 (ver nota) |
 
-**Calidad de señales** (¿subió el precio después?): BUY a +1h acierta **54%** (+0.19¢ prom.); el edge se concentra en **+1 a +4h** y se desvanece o invierte a +24h (STRONG_BUY a +24h es **negativo**: −0.88¢, 42% acierto — un dip fuerte en USD/MXN tiende a seguir cayendo ese día, es régimen de momentum, no de reversión diaria).
+**Trader** (compra barato / toma ganancia): **+$141,269 MXN realizados** en 12 meses (54 compras / 51 ventas).
+
+**Calidad de señales:** STRONG_BUY a +4h da +0.41¢ con 53% de acierto (el mejor horizonte); a +24h se invierte (−0.97¢, 40%) → el dólar en caída fuerte tiende a seguir cayendo ese día (momentum, no reversión diaria). El edge vive en **1–4h**.
 
 ## Conclusiones
 
-1. **Programar las compras con señales le gana al TWAP** de forma consistente en agregado anual, aunque hay meses negativos.
-2. **La lógica actual del bot (slot-fill) es conservadora** porque obliga a comprar en cada intervalo, diluyendo el edge. Una estrategia de **reserva** (guardar un "war-chest" y desplegarlo solo en señales) captura 10-20× más — a costa de **riesgo de inventario intradía** (estás sub-comprado hasta que llegan las señales, relevante para una mesa que debe entregar USDT a clientes).
-3. **El edge es intradía (1-4h).** El bot en vivo opera a **nivel minuto** y puede capturar dips que este backtest horario literalmente no ve, por lo que estos números son un **piso conservador**.
+1. **El agresivo gana claramente** (+0.20¢, ~$705k/año): guardar reserva y soltarla fuerte en los dips es lo que más captura. A cambio: **riesgo de inventario intradía** (anda corto de USDT mientras espera señales).
+2. **El inteligente (todo junto) queda 2º** — combinar sesiones + viernes con el núcleo agresivo es más conservador que el agresivo puro, pero más robusto.
+3. **Las sesiones aportan** (+0.06¢): comprar más en las horas líquidas (europea/americana) ayuda.
+4. **El trader es viable** con toma de ganancia: +$141k/año de pura especulación, además del ahorro en compras.
 
 ## Limitaciones honestas
 
-- Granularidad horaria, no minuto (el backtest no ve dips intra-hora).
-- Proxy USD/MXN spot por USDT/MXN (la prima se cancela en la métrica de diferencia).
-- **Sin costos/slippage**, pero se comparan bot vs TWAP sobre la misma serie y mismo volumen → los costos de transacción se cancelan en gran medida; lo que importa es el diferencial de precio.
-- Sin ventanas de blackout por eventos (no hay fechas históricas de eventos en el dataset).
-- La estrategia de reserva asume que el sobrante no desplegado se compra al cierre del día (modelado causalmente); en la práctica el riesgo de inventario debe gestionarse.
+- **Granularidad horaria, no minuto.** El bot en vivo opera a nivel minuto y captura dips intra-hora que aquí no se ven → **estos números son un piso conservador**.
+- **El "efecto viernes" NO se puede backtestear con datos de forex** (el dólar no cotiza fin de semana, así que no existe el "precio caro de fin de semana" en los datos). En el backtest, "Viernes" solo prueba el *timing* (concentrar la compra el viernes antes de las 2:30pm), que por sí solo es ~neutral. **El valor real del viernes — la prima de baja liquidez del fin de semana en Bitso — solo se mide EN VIVO**, y por eso el dashboard tiene el monitor "Efecto viernes".
+- Proxy USD/MXN por USDT/MXN (prima constante se cancela en la métrica de diferencia).
+- Sin costos/slippage: se comparan estrategias sobre la misma serie, así que los costos se cancelan en gran medida.
+- El periodo fue de tendencia alcista del USD/MXN (~17.4 → ~18.0); los resultados pueden variar en regímenes distintos.
