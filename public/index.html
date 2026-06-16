@@ -3,359 +3,291 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DolarSignal — Laboratorio de estrategias USDT/MXN</title>
+<title>DolarSignal — Laboratorio USDT/MXN</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <style>
   :root {
-    --bg: #0d1117; --panel: #161b22; --border: #30363d;
-    --text: #e6edf3; --muted: #8b949e;
-    --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff; --purple: #a371f7; --gold: #e3b341;
+    --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e;
+    --green:#3fb950; --red:#f85149; --yellow:#d29922; --blue:#58a6ff; --purple:#a371f7; --gold:#e3b341;
   }
-  * { box-sizing: border-box; margin: 0; }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; padding: 12px; font-size: 13px; }
-  h1 { font-size: 18px; display: inline; }
-  .sub { color: var(--muted); font-size: 12px; margin: 2px 0 10px; }
-  .grid { display: grid; gap: 10px; }
-  .cards { grid-template-columns: repeat(auto-fit, minmax(122px, 1fr)); margin-bottom: 10px; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; }
-  .card .label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .4px; }
-  .card .value { font-size: 20px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
-  .card .hint { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 12px; margin-bottom: 10px; }
-  .panel h2 { font-size: 13px; margin-bottom: 8px; color: var(--blue); }
-  .cols-2 { grid-template-columns: 1.5fr 1fr; }
-  .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
-  @media (max-width: 1100px) { .cols-3 { grid-template-columns: 1fr; } .cols-2 { grid-template-columns: 1fr; } }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 6px; border-bottom: 1px solid var(--border); font-size: 11px; }
-  td { padding: 4px 6px; border-bottom: 1px solid #21262d; font-variant-numeric: tabular-nums; }
-  tr:last-child td { border-bottom: none; }
-  .pos { color: var(--green); } .neg { color: var(--red); }
-  .tier { padding: 1px 7px; border-radius: 9px; font-size: 10.5px; font-weight: 600; }
-  .tier-WATCH { background: #1c2a3a; color: var(--blue); }
-  .tier-BUY { background: #12261e; color: var(--green); }
-  .tier-STRONG_BUY { background: #2d1a12; color: #ff9248; }
-  .tier-BLOCKED { background: #2d1215; color: var(--red); }
-  .feed { max-height: 280px; overflow-y: auto; }
-  .feed-item { padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 12px; }
-  .feed-item .when { color: var(--muted); font-size: 10.5px; }
-  .feed-item ul { margin: 3px 0 0 16px; color: var(--muted); font-size: 11px; }
-  .banner { background: #2d1215; border: 1px solid var(--red); color: var(--red); padding: 9px 14px; border-radius: 7px; margin-bottom: 10px; font-weight: 600; display: none; }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
-  .rank1 td { background: rgba(63,185,80,.09); }
-  .win { font-weight: 700; }
-  a { color: var(--blue); text-decoration: none; }
-  #chart-box { height: 360px; }
-  .leader td { padding: 6px; }
-  .leader .big { font-size: 15px; font-weight: 700; }
-  .pill { font-size: 9.5px; padding: 1px 5px; border-radius: 7px; background: #21262d; color: var(--muted); margin-left: 5px; }
-  .ctrl { display: inline-flex; gap: 4px; margin-left: 8px; }
-  .ctrl button { background: #21262d; color: var(--muted); border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; font-size: 11px; cursor: pointer; }
-  .ctrl button.on { background: #1f6feb; color: #fff; border-color: #1f6feb; }
-  .ctrl button:hover { color: var(--text); }
-  .hourrow { display: grid; grid-template-columns: 38px 1fr 52px; align-items: center; gap: 6px; font-size: 11px; padding: 1px 0; font-variant-numeric: tabular-nums; }
-  .hourbar { height: 11px; position: relative; background: #21262d; border-radius: 2px; }
-  .hourbar > div { position: absolute; top: 0; bottom: 0; }
-  .hournow { outline: 1px solid var(--blue); border-radius: 3px; }
-  .traderbox { display: flex; flex-wrap: wrap; gap: 18px; align-items: baseline; font-size: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #21262d; }
-  .traderbox .big { font-size: 16px; font-weight: 700; }
-  .traderbox .lbl { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,'Segoe UI',sans-serif; padding:10px; font-size:13px; }
+  h1 { font-size:17px; display:inline; }
+  .sub { color:var(--muted); font-size:11.5px; }
+  .grid { display:grid; gap:9px; }
+  .cards { grid-template-columns:repeat(auto-fit,minmax(118px,1fr)); margin-bottom:9px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:7px; padding:8px 11px; }
+  .card .label { color:var(--muted); font-size:9.5px; text-transform:uppercase; letter-spacing:.3px; }
+  .card .value { font-size:19px; font-weight:600; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .card .hint { font-size:10px; color:var(--muted); margin-top:1px; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:7px; padding:11px; margin-bottom:9px; }
+  .panel h2 { font-size:12.5px; margin-bottom:8px; color:var(--blue); }
+  .cols-3 { grid-template-columns:1fr 1fr 1fr; }
+  @media (max-width:1100px){ .cols-3{ grid-template-columns:1fr 1fr; } }
+  @media (max-width:680px){ .cols-3{ grid-template-columns:1fr; } body{ padding:7px; } .card .value{ font-size:17px; } }
+  .scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  table { width:100%; border-collapse:collapse; font-size:12px; white-space:nowrap; }
+  th { text-align:left; color:var(--muted); font-weight:500; padding:4px 6px; border-bottom:1px solid var(--border); font-size:10.5px; }
+  td { padding:4px 6px; border-bottom:1px solid #21262d; font-variant-numeric:tabular-nums; }
+  tr:last-child td { border-bottom:none; }
+  .pos{ color:var(--green); } .neg{ color:var(--red); }
+  .tier{ padding:1px 6px; border-radius:9px; font-size:10px; font-weight:600; }
+  .tier-WATCH{ background:#1c2a3a; color:var(--blue); } .tier-BUY{ background:#12261e; color:var(--green); }
+  .tier-STRONG_BUY{ background:#2d1a12; color:#ff9248; } .tier-BLOCKED{ background:#2d1215; color:var(--red); }
+  .feed{ max-height:260px; overflow-y:auto; }
+  .feed-item{ padding:5px 0; border-bottom:1px solid #21262d; font-size:11.5px; white-space:normal; }
+  .feed-item .when{ color:var(--muted); font-size:10px; }
+  .feed-item ul{ margin:3px 0 0 15px; color:var(--muted); font-size:10.5px; }
+  .banner{ background:#2d1215; border:1px solid var(--red); color:var(--red); padding:8px 12px; border-radius:7px; margin-bottom:9px; font-weight:600; display:none; font-size:12px; }
+  .dot{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:middle; }
+  .rank1 td{ background:rgba(63,185,80,.09); }
+  .win{ font-weight:700; }
+  a{ color:var(--blue); text-decoration:none; }
+  #chart-box{ height:340px; }
+  @media (max-width:680px){ #chart-box{ height:250px; } }
+  .leader td{ padding:6px; } .leader .big{ font-size:14px; font-weight:700; }
+  .pill{ font-size:9px; padding:1px 5px; border-radius:7px; background:#21262d; color:var(--muted); margin-left:4px; }
+  .ctrl{ display:inline-flex; gap:3px; margin:0 6px 5px 0; flex-wrap:wrap; }
+  .ctrl button{ background:#21262d; color:var(--muted); border:1px solid var(--border); border-radius:5px; padding:2px 8px; font-size:11px; cursor:pointer; }
+  .ctrl button.on{ background:#1f6feb; color:#fff; border-color:#1f6feb; }
+  .hourrow{ display:grid; grid-template-columns:34px 1fr 48px; align-items:center; gap:5px; font-size:10.5px; padding:1px 0; font-variant-numeric:tabular-nums; }
+  .hourbar{ height:10px; position:relative; background:#21262d; border-radius:2px; }
+  .hourbar>div{ position:absolute; top:0; bottom:0; }
+  .hournow{ outline:1px solid var(--blue); border-radius:3px; }
+  .tbox{ display:flex; flex-wrap:wrap; gap:14px; align-items:baseline; font-size:11.5px; margin-top:7px; padding-top:7px; border-top:1px solid #21262d; }
+  .tbox .big{ font-size:15px; font-weight:700; } .tbox .lbl{ color:var(--muted); font-size:9.5px; text-transform:uppercase; }
 </style>
 </head>
 <body>
-<div><h1>💵 DolarSignal</h1> <span class="sub" style="display:inline">— Laboratorio de estrategias · paper trading $20M MXN/día · <span id="updated"></span></span></div>
+<div><h1>💵 DolarSignal</h1> <span class="sub">· $20M MXN/día · <span id="updated"></span></span></div>
 
 <div class="banner" id="blackout"></div>
 
 <div class="panel" id="ai-panel" style="display:none;border-color:#8957e5;background:#1a1226">
-  <h2 style="color:#d2a8ff">🤖 Agente IA — análisis de Opus 4.8 <span class="pill" id="ai-when"></span></h2>
+  <h2 style="color:#d2a8ff">🤖 Agente IA — Opus 4.8 <span class="pill" id="ai-when"></span></h2>
   <div id="ai-body"></div>
 </div>
 
-<div class="grid cards" id="cards"></div>
+<div class="grid cards" id="cards" style="margin-top:9px"></div>
 
 <div class="panel">
   <h2>🏆 Ranking — ¿cuánto gana cada estrategia? (vs comprar a lo tonto / TWAP)</h2>
-  <table id="leader" class="leader"><thead><tr>
-    <th>#</th><th>Estrategia</th><th>Precio prom.</th><th>Centavos/USDT</th><th>💰 Ganancia acum.</th><th>USDT comprado</th><th># señales</th>
-  </tr></thead><tbody></tbody></table>
-  <div class="traderbox" id="traderbox"></div>
+  <div class="scroll"><table id="leader" class="leader"><thead><tr>
+    <th>#</th><th>Estrategia</th><th>Precio prom.</th><th>¢/USDT</th><th>💰 Ganancia</th><th>USDT</th><th>#señ.</th>
+  </tr></thead><tbody></tbody></table></div>
+  <div class="tbox" id="traderbox"></div>
 </div>
 
 <div class="panel">
   <h2 style="display:inline">📊 Gráfica</h2>
-  <span class="ctrl" id="ctrl-src"></span>
-  <span class="ctrl" id="ctrl-int"></span>
-  <span class="ctrl" id="ctrl-range"></span>
-  <span class="ctrl"><button id="btn-rfq" class="on">⭐ RFQ</button><button id="btn-spot">Spot</button><button id="btn-reset">⟲ zoom</button></span>
-  <div style="font-size:10.5px;color:var(--muted);margin:4px 0 6px">Rueda del mouse = zoom · arrastra = mover · ▲ compra · ▼ venta del trader</div>
+  <div style="margin-top:6px">
+    <span class="ctrl" id="ctrl-type"></span>
+    <span class="ctrl" id="ctrl-src"></span>
+    <span class="ctrl" id="ctrl-range"></span>
+    <span class="ctrl"><button id="btn-rfq" class="on">⭐RFQ</button><button id="btn-spot">Spot</button><button id="btn-reset">⟲</button></span>
+  </div>
+  <div style="font-size:10px;color:var(--muted);margin:2px 0 6px">Zoom: rueda/pellizco · arrastra = mover · ▲ compra ▼ venta</div>
   <div id="chart-box"><canvas id="chart"></canvas></div>
 </div>
 
 <div class="grid cols-3">
   <div class="panel" style="margin:0">
-    <h2>📅 Rendimiento por día (¢ vs pareja)</h2>
-    <div style="overflow-x:auto"><table id="daily"><thead></thead><tbody></tbody></table></div>
+    <h2>📅 Por día (¢ vs pareja)</h2>
+    <div class="scroll"><table id="daily"><thead></thead><tbody></tbody></table></div>
   </div>
   <div class="panel" style="margin:0">
-    <h2>🕐 Nuestro precio (RFQ) por hora <span class="pill">¿cuándo conviene?</span></h2>
+    <h2>🕐 RFQ por hora <span class="pill">¿cuándo conviene?</span></h2>
     <div id="rfqhour" style="font-size:11px;color:var(--muted)"></div>
   </div>
   <div class="panel" style="margin:0">
-    <h2>🎯 Calidad de señales (¿subió después?)</h2>
-    <table id="quality"><thead><tr>
-      <th>Tier</th><th>Horiz.</th><th>#</th><th>Δ¢</th><th>%ok</th>
-    </tr></thead><tbody></tbody></table>
+    <h2>🎯 Calidad de señales</h2>
+    <div class="scroll"><table id="quality"><thead><tr><th>Tier</th><th>Horiz.</th><th>#</th><th>Δ¢</th><th>%ok</th></tr></thead><tbody></tbody></table></div>
   </div>
 </div>
 
 <div class="grid cols-3">
-  <div class="panel" style="margin:0">
-    <h2>🔔 Señales recientes</h2>
-    <div class="feed" id="signals"></div>
-  </div>
-  <div class="panel" style="margin:0">
-    <h2>💰 Operaciones recientes</h2>
-    <div class="feed">
-      <table id="trades"><thead><tr>
-        <th>Hora</th><th>Estrategia</th><th>Tipo</th><th>MXN</th><th>Precio</th><th>+1h</th>
-      </tr></thead><tbody></tbody></table>
-    </div>
-  </div>
+  <div class="panel" style="margin:0"><h2>🔔 Señales recientes</h2><div class="feed" id="signals"></div></div>
+  <div class="panel" style="margin:0"><h2>💰 Operaciones</h2><div class="feed scroll"><table id="trades"><thead><tr><th>Hora</th><th>Estrategia</th><th>Tipo</th><th>MXN</th><th>Precio</th><th>+1h</th></tr></thead><tbody></tbody></table></div></div>
   <div class="panel" style="margin:0">
     <h2>🗓️ Efecto viernes</h2>
-    <table id="friday"><thead><tr><th>Viernes</th><th>Cierre</th><th>Finde</th><th>Δ¢</th></tr></thead><tbody></tbody></table>
-    <h2 style="margin-top:14px">📌 Próximos eventos de riesgo</h2>
-    <table id="events"><thead><tr><th>Fecha (CDMX)</th><th>Evento</th></tr></thead><tbody></tbody></table>
+    <div class="scroll"><table id="friday"><thead><tr><th>Viernes</th><th>Cierre</th><th>Finde</th><th>Δ¢</th></tr></thead><tbody></tbody></table></div>
+    <h2 style="margin-top:12px">📌 Próximos eventos</h2>
+    <div class="scroll"><table id="events"><thead><tr><th>Fecha</th><th>Evento</th></tr></thead><tbody></tbody></table></div>
   </div>
 </div>
 
-<div class="panel">
-  <h2>📰 Noticias que mueven USD/MXN y cripto (análisis en tiempo real)</h2>
-  <div class="feed" id="news"></div>
-</div>
+<div class="panel"><h2>📰 Noticias (USD/MXN y cripto)</h2><div class="feed" id="news"></div></div>
 
 <script>
 const $ = id => document.getElementById(id);
-const fmt = (n, d = 4) => n == null ? '—' : Number(n).toLocaleString('es-MX', { minimumFractionDigits: d, maximumFractionDigits: d });
-const fmtMxn = n => n == null ? '—' : '$' + Number(n).toLocaleString('es-MX', { maximumFractionDigits: 0 });
-const fmtUsdt = n => n == null ? '—' : Number(n).toLocaleString('es-MX', { maximumFractionDigits: 0 });
-const when = ts => new Date(ts).toLocaleString('es-MX', { timeZone: 'America/Mexico_City', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-const cls = n => n == null ? '' : n >= 0 ? 'pos' : 'neg';
-const cent = n => n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(3) + '¢';
-const deltaCell = (outcomes, h) => {
-  const o = (outcomes || []).find(x => x.horizon_min === h);
-  if (!o) return '<td>—</td>';
-  return `<td class="${cls(o.delta_centavos)}">${o.delta_centavos >= 0 ? '+' : ''}${o.delta_centavos.toFixed(2)}¢</td>`;
-};
-const COLORS = { twap:'#8b949e', bot:'#3fb950', aggressive:'#f85149', sessions:'#a371f7', friday:'#d29922', smart:'#58a6ff', trader:'#ff7b72' };
-const LABELS = { twap:'Pareja', bot:'Cauteloso', aggressive:'Agresivo', sessions:'Sesiones', friday:'Viernes', smart:'Inteligente' };
+const fmt = (n,d=4)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtMxn = n => n==null?'—':'$'+Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+const fmtUsdt = n => n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+const when = ts => new Date(ts).toLocaleString('es-MX',{timeZone:'America/Mexico_City',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+const hm = ts => new Date(ts).toLocaleTimeString('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit'});
+const cls = n => n==null?'':n>=0?'pos':'neg';
+const cent = n => n==null?'—':(n>=0?'+':'')+n.toFixed(3)+'¢';
+const deltaCell = (o,h)=>{ const x=(o||[]).find(z=>z.horizon_min===h); return x?`<td class="${cls(x.delta_centavos)}">${x.delta_centavos>=0?'+':''}${x.delta_centavos.toFixed(2)}¢</td>`:'<td>—</td>'; };
+const COLORS={ twap:'#8b949e',bot:'#3fb950',aggressive:'#f85149',sessions:'#a371f7',friday:'#d29922',smart:'#58a6ff',trader:'#ff7b72' };
+const LABELS={ twap:'Pareja',bot:'Cauteloso',aggressive:'Agresivo',sessions:'Sesiones',friday:'Viernes',smart:'Inteligente' };
 
-// Estado de la gráfica
-const chartState = { source: 'bitso', interval: 15, hours: 24, showRfq: true, showSpot: false };
+// Registrar plugins/controladores de forma defensiva (no rompen si faltan)
+try { if (window.ChartZoom) Chart.register(window.ChartZoom); } catch(e){}
+let FINANCIAL_OK = false;
+try {
+  const fin = window.ChartFinancial || window['chartjs-chart-financial'];
+  if (fin && fin.CandlestickController) {
+    Chart.register(fin.CandlestickController, fin.CandlestickElement, fin.OhlcController, fin.OhlcElement);
+    FINANCIAL_OK = true;
+  } else if (Chart.registry.controllers.items && Chart.registry.controllers.items.candlestick) {
+    FINANCIAL_OK = true; // auto-registrado por el UMD
+  }
+} catch(e){}
+
+const chartState = { type:'line', source:'bitso', interval:15, hours:24, showRfq:true, showSpot:false };
 let chart, lastTrades = [];
 
-function buildCtrl(el, opts, key, fmtLabel) {
-  el.innerHTML = opts.map(o => `<button data-v="${o}" class="${chartState[key] == o ? 'on' : ''}">${fmtLabel(o)}</button>`).join('');
-  el.querySelectorAll('button').forEach(b => b.onclick = () => {
-    chartState[key] = isNaN(b.dataset.v) ? b.dataset.v : Number(b.dataset.v);
-    el.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v == b.dataset.v));
+function buildCtrl(el, opts, key, label){
+  el.innerHTML = opts.map(o=>`<button data-v="${o}" class="${chartState[key]==o?'on':''}">${label(o)}</button>`).join('');
+  el.querySelectorAll('button').forEach(b=> b.onclick=()=>{
+    chartState[key] = isNaN(b.dataset.v)?b.dataset.v:Number(b.dataset.v);
+    el.querySelectorAll('button').forEach(x=>x.classList.toggle('on', x.dataset.v==b.dataset.v));
     loadChart();
   });
 }
-buildCtrl($('ctrl-src'), ['bitso', 'rfq'], 'source', v => v === 'bitso' ? 'Velas: Bitso' : 'Velas: RFQ');
-buildCtrl($('ctrl-int'), [5, 15, 60], 'interval', v => v < 60 ? v + 'm' : '1h');
-buildCtrl($('ctrl-range'), [24, 72, 168], 'hours', v => v === 24 ? '24h' : v === 72 ? '3d' : '7d');
-$('btn-rfq').onclick = () => { chartState.showRfq = !chartState.showRfq; $('btn-rfq').classList.toggle('on', chartState.showRfq); loadChart(); };
-$('btn-spot').onclick = () => { chartState.showSpot = !chartState.showSpot; $('btn-spot').classList.toggle('on', chartState.showSpot); loadChart(); };
-$('btn-reset').onclick = () => { if (chart?.resetZoom) chart.resetZoom(); };
+buildCtrl($('ctrl-type'), ['line','candles'], 'type', v=> v==='line'?'Línea':(FINANCIAL_OK?'Velas':'Velas (n/d)'));
+buildCtrl($('ctrl-src'), ['bitso','rfq'], 'source', v=> v==='bitso'?'Bitso':'RFQ');
+buildCtrl($('ctrl-range'), [24,72,168], 'hours', v=> v===24?'24h':v===72?'3d':'7d');
+$('btn-rfq').onclick=()=>{ chartState.showRfq=!chartState.showRfq; $('btn-rfq').classList.toggle('on',chartState.showRfq); loadChart(); };
+$('btn-spot').onclick=()=>{ chartState.showSpot=!chartState.showSpot; $('btn-spot').classList.toggle('on',chartState.showSpot); loadChart(); };
+$('btn-reset').onclick=()=>{ if(chart&&chart.resetZoom) chart.resetZoom(); };
 
-const hasFinancial = () => { try { return !!Chart.registry.getController('candlestick'); } catch { return false; } };
-
-async function loadChart() {
-  try {
-    const d = await fetch(`/api/ohlc?source=${chartState.source}&interval=${chartState.interval}&hours=${chartState.hours}`).then(r => r.json());
+async function loadChart(){
+  try{
+    const d = await fetch(`/api/ohlc?source=${chartState.source}&interval=${chartState.interval}&hours=${chartState.hours}`).then(r=>r.json());
     renderChart(d, lastTrades);
-  } catch (e) { console.error(e); }
+  }catch(e){ console.error(e); }
 }
 
-function renderChart(d, trades) {
-  const candles = (d.candles || []).map(c => ({ x: Number(c.t), o: +c.o, h: +c.h, l: +c.l, c: +c.c }));
-  const buys = trades.filter(t => t.reason === 'signal' || t.reason === 'buy').map(t => ({ x: t.ts, y: t.price }));
-  const sells = trades.filter(t => t.reason === 'sell').map(t => ({ x: t.ts, y: t.price }));
-  const candleType = hasFinancial() ? 'candlestick' : 'line';
-  const srcLabel = chartState.source === 'bitso' ? 'USDT/MXN (Bitso)' : 'Nuestro precio (RFQ)';
+function renderChart(d, trades){
+  const candles = (d.candles||[]).map(c=>({ x:Number(c.t), o:+c.o, h:+c.h, l:+c.l, c:+c.c }));
+  const buys = (trades||[]).filter(t=>t.reason==='signal'||t.reason==='buy').map(t=>({x:t.ts,y:t.price}));
+  const sells = (trades||[]).filter(t=>t.reason==='sell').map(t=>({x:t.ts,y:t.price}));
+  const srcLabel = chartState.source==='bitso'?'USDT/MXN (Bitso)':'Nuestro precio (RFQ)';
+  const useCandles = chartState.type==='candles' && FINANCIAL_OK && candles.length;
 
   const datasets = [];
-  if (candleType === 'candlestick') {
-    datasets.push({
-      label: srcLabel, type: 'candlestick', data: candles,
-      color: { up: '#3fb950', down: '#f85149', unchanged: '#8b949e' },
-      borderColor: { up: '#3fb950', down: '#f85149', unchanged: '#8b949e' },
-    });
+  if (useCandles){
+    datasets.push({ label:srcLabel, type:'candlestick', data:candles,
+      color:{ up:'#3fb950', down:'#f85149', unchanged:'#8b949e' },
+      borderColor:{ up:'#3fb950', down:'#f85149', unchanged:'#8b949e' } });
   } else {
-    datasets.push({ label: srcLabel, type: 'line', data: candles.map(c => ({ x: c.x, y: c.c })), borderColor: '#58a6ff', borderWidth: 1.5, pointRadius: 0, tension: .1 });
+    datasets.push({ label:srcLabel, type:'line', data:candles.map(c=>({x:c.x,y:c.c})), borderColor:'#58a6ff', borderWidth:1.6, pointRadius:0, tension:.12 });
   }
-  if (chartState.showRfq && chartState.source !== 'rfq') {
-    datasets.push({ label: '⭐ Nuestro precio (RFQ)', type: 'line', data: (d.rfqLine || []).map(c => ({ x: c.bucket, y: c.price })), borderColor: '#e3b341', borderWidth: 1.6, pointRadius: 0, tension: .1 });
-  }
-  if (chartState.showSpot) {
-    datasets.push({ label: 'USD/MXN spot', type: 'line', data: (d.spotLine || []).map(c => ({ x: c.bucket, y: c.price })), borderColor: '#6e7681', borderWidth: 1, pointRadius: 0, borderDash: [4, 3], tension: .1 });
-  }
-  datasets.push({ label: 'Compras', type: 'scatter', data: buys, pointStyle: 'triangle', pointRadius: 6, backgroundColor: '#3fb950', borderColor: '#0d1117' });
-  datasets.push({ label: 'Ventas trader', type: 'scatter', data: sells, pointStyle: 'triangle', rotation: 180, pointRadius: 6, backgroundColor: '#f85149', borderColor: '#0d1117' });
+  if (chartState.showRfq && chartState.source!=='rfq')
+    datasets.push({ label:'⭐ RFQ', type:'line', data:(d.rfqLine||[]).map(c=>({x:c.bucket,y:c.price})), borderColor:'#e3b341', borderWidth:1.5, pointRadius:0, tension:.12 });
+  if (chartState.showSpot)
+    datasets.push({ label:'USD/MXN spot', type:'line', data:(d.spotLine||[]).map(c=>({x:c.bucket,y:c.price})), borderColor:'#6e7681', borderWidth:1, pointRadius:0, borderDash:[4,3], tension:.12 });
+  datasets.push({ label:'Compras', type:'scatter', data:buys, pointStyle:'triangle', pointRadius:6, backgroundColor:'#3fb950', borderColor:'#0d1117' });
+  datasets.push({ label:'Ventas', type:'scatter', data:sells, pointStyle:'triangle', rotation:180, pointRadius:6, backgroundColor:'#f85149', borderColor:'#0d1117' });
+
+  // Rango temporal explícito (evita que el eje se desvíe). Eje LINEAL con formato manual
+  // para la línea (sin depender de luxon); eje 'time' solo para velas.
+  const xs = [...candles.map(c=>c.x), ...buys.map(p=>p.x), ...sells.map(p=>p.x), ...(d.rfqLine||[]).map(c=>c.bucket)].filter(Boolean);
+  const xMin = xs.length?Math.min(...xs):undefined, xMax = xs.length?Math.max(...xs):undefined;
+
+  const xScale = useCandles
+    ? { type:'time', min:xMin, max:xMax, time:{ tooltipFormat:'dd LLL HH:mm', displayFormats:{ minute:'HH:mm',hour:'HH:mm',day:'dd LLL',week:'dd LLL',month:'LLL yy' } },
+        ticks:{ color:'#8b949e', maxTicksLimit:8, source:'auto' }, grid:{ color:'#21262d' } }
+    : { type:'linear', min:xMin, max:xMax,
+        ticks:{ color:'#8b949e', maxTicksLimit:8, callback:v=>hm(v) }, grid:{ color:'#21262d' } };
 
   const options = {
-    maintainAspectRatio: false, animation: false,
-    scales: {
-      x: { type: 'time', time: { tooltipFormat: 'dd LLL HH:mm', displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'dd LLL' } },
-           adapters: { date: { zone: 'America/Mexico_City' } },
-           ticks: { color: '#8b949e', maxTicksLimit: 10, source: 'auto' }, grid: { color: '#21262d' } },
-      y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, position: 'right' },
-    },
-    plugins: {
-      legend: { labels: { color: '#e6edf3', boxWidth: 11, font: { size: 11 }, filter: i => i.text } },
-      zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, drag: { enabled: false }, mode: 'x' }, pan: { enabled: true, mode: 'x' } },
+    maintainAspectRatio:false, animation:false, parsing:true,
+    scales:{ x:xScale, y:{ position:'right', ticks:{ color:'#8b949e' }, grid:{ color:'#21262d' } } },
+    plugins:{
+      legend:{ labels:{ color:'#e6edf3', boxWidth:10, font:{size:10} } },
+      tooltip:{ callbacks:{ title: items => items.length? hm(items[0].parsed.x):'' } },
+      zoom:{ zoom:{ wheel:{enabled:true}, pinch:{enabled:true}, mode:'x' }, pan:{ enabled:true, mode:'x' } },
     },
   };
-
-  if (chart) { chart.destroy(); }
-  chart = new Chart($('chart'), { data: { datasets }, options });
+  if (chart) chart.destroy();
+  chart = new Chart($('chart'), { data:{ datasets }, options });
 }
 
-function renderRfqHour(rows) {
-  const vals = rows.filter(r => r.edgeCentavos != null);
-  if (!vals.length) { $('rfqhour').innerHTML = 'Recolectando datos… (necesita varias horas)'; return; }
-  const max = Math.max(0.2, ...vals.map(r => Math.abs(r.edgeCentavos)));
-  const nowHour = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City', hour: '2-digit', hour12: false }));
-  let html = '<div style="margin-bottom:5px;font-size:10.5px">Verde = tu RFQ <b>más barato</b> que el público · rojo = más caro</div>';
-  for (const r of rows) {
-    if (r.edgeCentavos == null) continue;
-    const e = r.edgeCentavos, w = Math.abs(e) / max * 50;
-    const color = e >= 0 ? 'var(--green)' : 'var(--red)';
-    const bar = e >= 0 ? `<div style="left:50%;width:${w}%;background:${color}"></div>` : `<div style="right:50%;width:${w}%;background:${color}"></div>`;
-    html += `<div class="hourrow ${r.hour === nowHour ? 'hournow' : ''}">
-      <span>${String(r.hour).padStart(2,'0')}:00</span>
-      <div class="hourbar"><div style="left:50%;width:1px;background:#484f58"></div>${bar}</div>
-      <span class="${cls(e)}" style="text-align:right">${cent(e)}</span></div>`;
+function renderRfqHour(rows){
+  const vals = rows.filter(r=>r.edgeCentavos!=null);
+  if(!vals.length){ $('rfqhour').innerHTML='Recolectando datos…'; return; }
+  const max = Math.max(0.2, ...vals.map(r=>Math.abs(r.edgeCentavos)));
+  const nowHour = Number(new Date().toLocaleString('en-US',{timeZone:'America/Mexico_City',hour:'2-digit',hour12:false}));
+  let html='<div style="margin-bottom:4px;font-size:10px">Verde = RFQ más barato que público · rojo = más caro</div>';
+  for(const r of rows){ if(r.edgeCentavos==null) continue;
+    const e=r.edgeCentavos, w=Math.abs(e)/max*50, col=e>=0?'var(--green)':'var(--red)';
+    const bar = e>=0?`<div style="left:50%;width:${w}%;background:${col}"></div>`:`<div style="right:50%;width:${w}%;background:${col}"></div>`;
+    html+=`<div class="hourrow ${r.hour===nowHour?'hournow':''}"><span>${String(r.hour).padStart(2,'0')}h</span><div class="hourbar"><div style="left:50%;width:1px;background:#484f58"></div>${bar}</div><span class="${cls(e)}" style="text-align:right">${cent(e)}</span></div>`;
   }
-  $('rfqhour').innerHTML = html;
+  $('rfqhour').innerHTML=html;
 }
 
-async function refresh() {
-  try {
-    const [state, signals, trades, news, perf] = await Promise.all(
-      ['state', 'signals', 'trades', 'news', 'performance'].map(p => fetch('/api/' + p).then(r => r.json()))
-    );
-    lastTrades = trades || [];
+async function refresh(){
+  try{
+    const [state,signals,trades,news,perf] = await Promise.all(['state','signals','trades','news','performance'].map(p=>fetch('/api/'+p).then(r=>r.json())));
+    lastTrades = trades||[];
+    $('updated').textContent = 'act. '+when(state.now);
+    $('blackout').style.display = state.blackout?'block':'none';
+    if(state.blackout) $('blackout').textContent='⛔ VENTANA DE RIESGO: '+state.blackout+' — compras por señal bloqueadas';
 
-    $('updated').textContent = 'actualizado ' + when(state.now);
-    $('blackout').style.display = state.blackout ? 'block' : 'none';
-    if (state.blackout) $('blackout').textContent = '⛔ VENTANA DE RIESGO ACTIVA: ' + state.blackout + ' — compras por señal bloqueadas';
-
-    // Panel del agente IA
     const a = state.analyst;
-    if (a) {
-      const STANCE = {
-        COMPRAR_AHORA: { txt: '🟢 COMPRAR AHORA', col: 'var(--green)' },
-        COMPRAR_PARCIAL: { txt: '🟡 COMPRAR PARCIAL', col: 'var(--yellow)' },
-        ESPERAR: { txt: '⏸️ ESPERAR', col: 'var(--blue)' },
-        EVITAR: { txt: '🔴 EVITAR', col: 'var(--red)' },
-      };
-      const s = STANCE[a.stance] || { txt: a.stance, col: 'var(--text)' };
-      $('ai-panel').style.display = 'block';
-      $('ai-when').textContent = a.ts ? 'hace ' + Math.max(0, Math.round((state.now - a.ts) / 60000)) + ' min' : '';
-      $('ai-body').innerHTML = `
-        <div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px">
-          <span style="font-size:18px;font-weight:700;color:${s.col}">${s.txt}</span>
-          <span style="color:var(--muted)">confianza ${a.confidence}%</span>
-          <span style="font-weight:600">${a.headline || ''}</span>
-        </div>
-        <div style="font-size:12px;margin-bottom:6px">${a.reasoning || ''}</div>
-        <div style="font-size:11px;color:var(--muted)">📊 ${a.marketRead || ''} · ⏱️ ${a.horizon || ''}${(a.risks && a.risks.length) ? ' · ⚠️ ' + a.risks.join('; ') : ''}</div>
-        ${state.scout ? `<div style="font-size:10.5px;color:var(--muted);margin-top:6px;border-top:1px solid #30363d;padding-top:5px">👀 Scout (${state.scout.urgency || ''}): ${state.scout.reason || ''}</div>` : ''}`;
+    if(a){
+      const S={ COMPRAR_AHORA:{t:'🟢 COMPRAR AHORA',c:'var(--green)'}, COMPRAR_PARCIAL:{t:'🟡 COMPRAR PARCIAL',c:'var(--yellow)'}, ESPERAR:{t:'⏸️ ESPERAR',c:'var(--blue)'}, EVITAR:{t:'🔴 EVITAR',c:'var(--red)'} };
+      const s=S[a.stance]||{t:a.stance,c:'var(--text)'};
+      $('ai-panel').style.display='block';
+      $('ai-when').textContent = a.ts?'hace '+Math.max(0,Math.round((state.now-a.ts)/60000))+' min':'';
+      $('ai-body').innerHTML = `<div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:16px;font-weight:700;color:${s.c}">${s.t}</span><span style="color:var(--muted)">conf. ${a.confidence}%</span><span style="font-weight:600;font-size:12px">${a.headline||''}</span></div><div style="font-size:11.5px;margin-bottom:5px">${a.reasoning||''}</div><div style="font-size:10.5px;color:var(--muted)">📊 ${a.marketRead||''} · ⏱️ ${a.horizon||''}${(a.risks&&a.risks.length)?' · ⚠️ '+a.risks.join('; '):''}</div>${state.scout?`<div style="font-size:10px;color:var(--muted);margin-top:5px;border-top:1px solid #30363d;padding-top:4px">👀 Scout (${state.scout.urgency||''}): ${state.scout.reason||''}</div>`:''}`;
     }
 
-    const ind = state.indicators || {};
+    const ind = state.indicators||{};
     $('cards').innerHTML = `
-      <div class="card" style="border-color:#1f6feb;background:#0d1f33"><div class="label" style="color:#79c0ff">⭐ RFQ compra</div><div class="value">${fmt(state.rfq?.price)}</div><div class="hint">${state.rfqEdge == null ? 'esperando…' : (state.rfqEdge >= 0 ? '+' : '') + state.rfqEdge.toFixed(2) + '¢ vs ask público'}</div></div>
-      <div class="card"><div class="label">⭐ RFQ venta</div><div class="value">${fmt(state.rfqSell?.price)}</div><div class="hint">${state.rfq && state.rfqSell ? 'spread ' + ((state.rfq.price - state.rfqSell.price) * 100).toFixed(2) + '¢' : 'a cuánto nos pagan'}</div></div>
-      <div class="card"><div class="label">USDT/MXN Bitso</div><div class="value">${fmt(state.bitso?.price)}</div><div class="hint">bid ${fmt(state.bitso?.bid)} / ask ${fmt(state.bitso?.ask)}</div></div>
-      <div class="card"><div class="label">USD/MXN spot</div><div class="value">${fmt(state.spot?.price)}</div><div class="hint">forex intradía</div></div>
-      <div class="card"><div class="label">BTC ${state.btc?.price > 200000 ? '(MXN)' : '(USD)'}</div><div class="value">${state.btc?.price ? '$' + fmtUsdt(state.btc.price) : '—'}</div><div class="hint" style="color:${ind.btcZ > 1.5 ? 'var(--green)' : 'inherit'}">z ${ind.btcZ == null ? '—' : ind.btcZ.toFixed(2)} · correlación</div></div>
-      <div class="card"><div class="label">RSI (1m)</div><div class="value" style="color:${ind.rsi < 30 ? 'var(--green)' : ind.rsi > 70 ? 'var(--red)' : 'inherit'}">${ind.rsi == null ? '—' : ind.rsi.toFixed(1)}</div><div class="hint">&lt;30 barato · &gt;70 caro</div></div>
-      <div class="card"><div class="label">Z-score 60m</div><div class="value" style="color:${ind.z < -1 ? 'var(--green)' : 'inherit'}">${ind.z == null ? '—' : ind.z.toFixed(2)}</div><div class="hint">&lt;-1.5 dip fuerte</div></div>
-    `;
+      <div class="card" style="border-color:#1f6feb;background:#0d1f33"><div class="label" style="color:#79c0ff">⭐ RFQ compra</div><div class="value">${fmt(state.rfq?.price)}</div><div class="hint">${state.rfqEdge==null?'…':(state.rfqEdge>=0?'+':'')+state.rfqEdge.toFixed(2)+'¢ vs ask'}</div></div>
+      <div class="card"><div class="label">⭐ RFQ venta</div><div class="value">${fmt(state.rfqSell?.price)}</div><div class="hint">${state.rfq&&state.rfqSell?'spread '+((state.rfq.price-state.rfqSell.price)*100).toFixed(2)+'¢':'nos pagan'}</div></div>
+      <div class="card"><div class="label">Bitso</div><div class="value">${fmt(state.bitso?.price)}</div><div class="hint">bid ${fmt(state.bitso?.bid,3)}/ask ${fmt(state.bitso?.ask,3)}</div></div>
+      <div class="card"><div class="label">USD/MXN spot</div><div class="value">${fmt(state.spot?.price)}</div><div class="hint">forex</div></div>
+      <div class="card"><div class="label">BTC ${state.btc?.price>200000?'MXN':'USD'}</div><div class="value">${state.btc?.price?'$'+fmtUsdt(state.btc.price):'—'}</div><div class="hint" style="color:${ind.btcZ>1.5?'var(--green)':'inherit'}">z ${ind.btcZ==null?'—':ind.btcZ.toFixed(2)}</div></div>
+      <div class="card"><div class="label">RSI 1m</div><div class="value" style="color:${ind.rsi<30?'var(--green)':ind.rsi>70?'var(--red)':'inherit'}">${ind.rsi==null?'—':ind.rsi.toFixed(1)}</div><div class="hint">&lt;30 barato</div></div>
+      <div class="card"><div class="label">Z-score 60m</div><div class="value" style="color:${ind.z<-1?'var(--green)':'inherit'}">${ind.z==null?'—':ind.z.toFixed(2)}</div><div class="hint">&lt;-1.5 dip</div></div>`;
 
-    const ranked = [...(perf.global || [])].sort((a, b) => (b.centavosSaved ?? -1e9) - (a.centavosSaved ?? -1e9));
-    $('leader').querySelector('tbody').innerHTML = ranked.map((p, i) => `
-      <tr class="${i === 0 && p.strategy !== 'twap' ? 'rank1' : ''}">
-        <td>${p.strategy === 'twap' ? '–' : i + 1}</td>
-        <td><span class="dot" style="background:${COLORS[p.strategy]}"></span>${p.label}${p.strategy === 'smart' ? '<span class="pill">todo junto</span>' : ''}${p.strategy === 'twap' ? '<span class="pill">referencia</span>' : ''}</td>
-        <td>${fmt(p.avg)}</td>
-        <td class="${cls(p.centavosSaved)} ${i === 0 && p.strategy !== 'twap' ? 'win' : ''}">${p.strategy === 'twap' ? '—' : cent(p.centavosSaved)}</td>
-        <td class="big ${cls(p.savedMxn)}">${p.strategy === 'twap' ? '—' : fmtMxn(p.savedMxn)}</td>
-        <td>${fmtUsdt(p.usdt)}</td>
-        <td>${p.signalTrades}</td>
-      </tr>`).join('') || '<tr><td colspan="7">Sin datos aún</td></tr>';
+    const ranked=[...(perf.global||[])].sort((x,y)=>(y.centavosSaved??-1e9)-(x.centavosSaved??-1e9));
+    $('leader').querySelector('tbody').innerHTML = ranked.map((p,i)=>`<tr class="${i===0&&p.strategy!=='twap'?'rank1':''}"><td>${p.strategy==='twap'?'–':i+1}</td><td><span class="dot" style="background:${COLORS[p.strategy]}"></span>${p.label}${p.strategy==='smart'?'<span class="pill">todo</span>':''}${p.strategy==='twap'?'<span class="pill">ref</span>':''}</td><td>${fmt(p.avg)}</td><td class="${cls(p.centavosSaved)} ${i===0&&p.strategy!=='twap'?'win':''}">${p.strategy==='twap'?'—':cent(p.centavosSaved)}</td><td class="big ${cls(p.savedMxn)}">${p.strategy==='twap'?'—':fmtMxn(p.savedMxn)}</td><td>${fmtUsdt(p.usdt)}</td><td>${p.signalTrades}</td></tr>`).join('') || '<tr><td colspan="7">Sin datos aún</td></tr>';
 
-    const tr = perf.trader || {};
-    $('traderbox').innerHTML = `
-      <div><span class="dot" style="background:${COLORS.trader}"></span><b style="color:${COLORS.trader}">Trader</b> <span class="pill">compra y vende en picos</span></div>
-      <div><div class="lbl">Ganancia realizada</div><span class="big ${cls(tr.realizedMxn)}">${fmtMxn(tr.realizedMxn)}</span></div>
-      <div><div class="lbl">No realizada (posición abierta)</div><span class="big ${cls(tr.unrealizedMxn)}">${fmtMxn(tr.unrealizedMxn)}</span></div>
-      <div><div class="lbl">Total</div><span class="big ${cls(tr.totalMxn)}">${fmtMxn(tr.totalMxn)}</span></div>
-      <div style="color:var(--muted)">${tr.buys || 0} compras / ${tr.sells || 0} ventas · posición ${fmtUsdt(tr.openUsdt)} USDT @ ${fmt(tr.avgCost)} · vende a ${fmt(tr.sellPrice)}</div>`;
+    const tr=perf.trader||{};
+    $('traderbox').innerHTML = `<div><span class="dot" style="background:${COLORS.trader}"></span><b style="color:${COLORS.trader}">Trader</b> <span class="pill">compra/vende</span></div><div><div class="lbl">Realizada</div><span class="big ${cls(tr.realizedMxn)}">${fmtMxn(tr.realizedMxn)}</span></div><div><div class="lbl">No realizada</div><span class="big ${cls(tr.unrealizedMxn)}">${fmtMxn(tr.unrealizedMxn)}</span></div><div><div class="lbl">Total</div><span class="big ${cls(tr.totalMxn)}">${fmtMxn(tr.totalMxn)}</span></div><div style="color:var(--muted);font-size:10.5px">${tr.buys||0} compras/${tr.sells||0} ventas · ${fmtUsdt(tr.openUsdt)} USDT @ ${fmt(tr.avgCost)} · vende a ${fmt(tr.sellPrice)}</div>`;
 
-    const keys = ['bot','aggressive','sessions','friday','smart'];
-    $('daily').querySelector('thead').innerHTML = '<tr><th>Fecha</th>' + keys.map(k => `<th><span class="dot" style="background:${COLORS[k]}"></span>${LABELS[k]}</th>`).join('') + '</tr>';
-    $('daily').querySelector('tbody').innerHTML = (perf.days || []).map(d => `<tr><td>${d.date}</td>${keys.map(k => {
-      const c = d.cells[k]?.centavos;
-      return `<td class="${cls(c)}">${c == null ? '—' : cent(c)}</td>`;
-    }).join('')}</tr>`).join('') || `<tr><td colspan="${keys.length + 1}">Sin días completos aún</td></tr>`;
+    const keys=['bot','aggressive','sessions','friday','smart'];
+    $('daily').querySelector('thead').innerHTML='<tr><th>Fecha</th>'+keys.map(k=>`<th><span class="dot" style="background:${COLORS[k]}"></span>${LABELS[k]}</th>`).join('')+'</tr>';
+    $('daily').querySelector('tbody').innerHTML=(perf.days||[]).map(d=>`<tr><td>${d.date}</td>${keys.map(k=>{const c=d.cells[k]?.centavos;return `<td class="${cls(c)}">${c==null?'—':cent(c)}</td>`;}).join('')}</tr>`).join('')||`<tr><td colspan="${keys.length+1}">Sin días aún</td></tr>`;
 
-    renderRfqHour(perf.rfqByHour || []);
+    renderRfqHour(perf.rfqByHour||[]);
 
-    $('quality').querySelector('tbody').innerHTML = (perf.quality || []).map(q => `<tr>
-      <td><span class="tier tier-${q.tier}">${q.tier}</span></td><td>+${q.horizon_min}m</td><td>${q.n}</td>
-      <td class="${cls(q.avg_delta)}">${(q.avg_delta >= 0 ? '+' : '') + Number(q.avg_delta).toFixed(2)}¢</td>
-      <td>${Number(q.hit_rate).toFixed(0)}%</td></tr>`).join('') || '<tr><td colspan="5">Sin señales evaluadas aún</td></tr>';
+    $('quality').querySelector('tbody').innerHTML=(perf.quality||[]).map(q=>`<tr><td><span class="tier tier-${q.tier}">${q.tier}</span></td><td>+${q.horizon_min}m</td><td>${q.n}</td><td class="${cls(q.avg_delta)}">${(q.avg_delta>=0?'+':'')+Number(q.avg_delta).toFixed(2)}¢</td><td>${Number(q.hit_rate).toFixed(0)}%</td></tr>`).join('')||'<tr><td colspan="5">Sin señales evaluadas aún</td></tr>';
 
-    $('friday').querySelector('tbody').innerHTML = (perf.friday || []).map(f => `<tr>
-      <td>${f.friday}</td><td>${fmt(f.closePrice)}</td><td>${fmt(f.weekendAvg)}</td>
-      <td class="${cls(f.deltaCentavos)}">${cent(f.deltaCentavos)}</td></tr>`).join('') || '<tr><td colspan="4">Aún sin fines de semana</td></tr>';
+    $('friday').querySelector('tbody').innerHTML=(perf.friday||[]).map(f=>`<tr><td>${f.friday}</td><td>${fmt(f.closePrice)}</td><td>${fmt(f.weekendAvg)}</td><td class="${cls(f.deltaCentavos)}">${cent(f.deltaCentavos)}</td></tr>`).join('')||'<tr><td colspan="4">Sin fines de semana aún</td></tr>';
 
-    $('events').querySelector('tbody').innerHTML = (state.events || []).slice(0, 5).map(e =>
-      `<tr><td>${when(e.ts)}</td><td>${e.name}</td></tr>`).join('') || '<tr><td colspan="2">—</td></tr>';
+    $('events').querySelector('tbody').innerHTML=(state.events||[]).slice(0,5).map(e=>`<tr><td>${when(e.ts)}</td><td style="white-space:normal">${e.name}</td></tr>`).join('')||'<tr><td colspan="2">—</td></tr>';
 
-    $('signals').innerHTML = (signals || []).slice(0, 25).map(s => `<div class="feed-item">
-      <span class="tier tier-${s.tier}">${s.tier}</span> <b>${fmt(s.price)}</b> · ${Number(s.score).toFixed(1)} <span class="when">· ${when(s.ts)}</span>
-      <ul>${(s.reasons || []).map(r => `<li>${r}</li>`).join('')}</ul></div>`).join('') || '<div class="feed-item">Sin señales aún</div>';
+    $('signals').innerHTML=(signals||[]).slice(0,25).map(s=>`<div class="feed-item"><span class="tier tier-${s.tier}">${s.tier}</span> <b>${fmt(s.price)}</b> · ${Number(s.score).toFixed(1)} <span class="when">· ${when(s.ts)}</span><ul>${(s.reasons||[]).map(r=>`<li>${r}</li>`).join('')}</ul></div>`).join('')||'<div class="feed-item">Sin señales aún (calienta ~20 min)</div>';
 
-    $('trades').querySelector('tbody').innerHTML = (trades || []).map(t => `<tr>
-      <td>${when(t.ts)}</td><td><span class="dot" style="background:${COLORS[t.strategy] || '#8b949e'}"></span>${LABELS[t.strategy] || t.strategy}</td>
-      <td>${t.reason === 'sell' ? '🔴venta' : t.reason === 'buy' ? '🟢compra' : '🟢señal'}</td>
-      <td>${fmtMxn(t.mxn)}</td><td>${fmt(t.price)}</td>${deltaCell(t.outcomes, 60)}</tr>`).join('') || '<tr><td colspan="6">Sin operaciones aún</td></tr>';
+    $('trades').querySelector('tbody').innerHTML=(trades||[]).map(t=>`<tr><td>${hm(t.ts)}</td><td><span class="dot" style="background:${COLORS[t.strategy]||'#8b949e'}"></span>${LABELS[t.strategy]||t.strategy}</td><td>${t.reason==='sell'?'🔴v':t.reason==='buy'?'🟢c':'🟢s'}</td><td>${fmtMxn(t.mxn)}</td><td>${fmt(t.price)}</td>${deltaCell(t.outcomes,60)}</tr>`).join('')||'<tr><td colspan="6">Sin operaciones aún</td></tr>';
 
-    $('news').innerHTML = (news || []).map(n => `<div class="feed-item">
-      <b style="color:${n.score >= 4 ? 'var(--yellow)' : 'inherit'}">[${Number(n.score).toFixed(1)}]</b>
-      ${n.link ? `<a href="${n.link}" target="_blank">${n.title}</a>` : n.title}
-      <span class="when">· ${n.source} · ${when(n.ts)} · ${(n.keywords || []).join(', ')}</span></div>`).join('') || '<div class="feed-item">Sin noticias aún</div>';
-  } catch (err) {
-    console.error(err);
-  }
+    $('news').innerHTML=(news||[]).map(n=>`<div class="feed-item"><b style="color:${n.score>=4?'var(--yellow)':'inherit'}">[${Number(n.score).toFixed(1)}]</b> ${n.link?`<a href="${n.link}" target="_blank">${n.title}</a>`:n.title} <span class="when">· ${n.source} · ${when(n.ts)}</span></div>`).join('')||'<div class="feed-item">Sin noticias aún</div>';
+  }catch(err){ console.error(err); }
 }
 
-// Registrar plugin de zoom si está disponible
-try { if (window.ChartZoom) Chart.register(window.ChartZoom); } catch (e) {}
-
-loadChart();
-refresh();
+loadChart(); refresh();
 setInterval(refresh, 15000);
 setInterval(loadChart, 60000);
 </script>
