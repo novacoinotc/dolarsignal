@@ -18,14 +18,16 @@ function json(res, data) {
 }
 
 export async function buildState() {
-  const [bitso, spot, btc, indicators, today] = await Promise.all([
-    lastTick('bitso'), lastTick('spot'), lastTick('btc'), indicatorSnapshot(), todayStats(),
+  const [bitso, spot, btc, rfq, indicators, today] = await Promise.all([
+    lastTick('bitso'), lastTick('spot'), lastTick('btc'), lastTick('rfq'), indicatorSnapshot(), todayStats(),
   ]);
   const blackout = activeBlackout();
   return {
     now: Date.now(),
-    bitso, spot, btc,
+    bitso, spot, btc, rfq,
     premium: bitso && spot ? bitso.price / spot.price - 1 : null,
+    // RFQ vs precio público de COMPRA (ask): positivo = nuestro RFQ es más barato que el libro
+    rfqEdge: rfq && bitso ? ((bitso.ask || bitso.price) - rfq.price) * 100 : null,
     indicators, today,
     blackout: blackout ? blackout.name : null,
     events: upcomingEvents(),
@@ -38,10 +40,11 @@ export const API = {
   candles: async (params) => {
     const hours = Math.min(Number(params.hours || 24), 168);
     const since = Date.now() - hours * 3600_000;
-    const [bitso, spot, btc] = await Promise.all([
-      minuteCloses('bitso', since), minuteCloses('spot', since), minuteCloses('btc', since),
+    const [bitso, spot, btc, rfq] = await Promise.all([
+      minuteCloses('bitso', since), minuteCloses('spot', since),
+      minuteCloses('btc', since), minuteCloses('rfq', since),
     ]);
-    return { bitso, spot, btc };
+    return { bitso, spot, btc, rfq };
   },
   signals: () => recentSignals(),
   trades: () => recentTrades(),

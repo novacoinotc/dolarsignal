@@ -131,6 +131,7 @@ function renderChart(data, trades) {
   const cfg = {
     type: 'line',
     data: { datasets: [
+      { label: '⭐ Nuestro precio (RFQ)', data: (data.rfq || []).map(c => ({ x: c.bucket, y: c.price })), borderColor: '#1f6feb', borderWidth: 2, pointRadius: 0, tension: .1, yAxisID: 'y' },
       { label: 'USDT/MXN (Bitso)', data: data.bitso.map(c => ({ x: c.bucket, y: c.price })), borderColor: '#58a6ff', borderWidth: 1.5, pointRadius: 0, tension: .1, yAxisID: 'y' },
       { label: 'USD/MXN spot', data: data.spot.map(c => ({ x: c.bucket, y: c.price })), borderColor: '#8b949e', borderWidth: 1, pointRadius: 0, borderDash: [4, 3], tension: .1, yAxisID: 'y' },
       { label: 'Compras', data: buys, type: 'scatter', pointStyle: 'triangle', pointRadius: 7, backgroundColor: '#3fb950', borderColor: '#3fb950', yAxisID: 'y' },
@@ -160,6 +161,7 @@ async function refresh() {
 
     const ind = state.indicators || {};
     $('cards').innerHTML = `
+      <div class="card" style="border-color:#1f6feb;background:#0d1f33"><div class="label" style="color:#79c0ff">⭐ Nuestro precio real (RFQ)</div><div class="value">${fmt(state.rfq?.price)}</div><div class="hint">${state.rfqEdge == null ? 'esperando cotización…' : (state.rfqEdge >= 0 ? '+' : '') + state.rfqEdge.toFixed(2) + '¢ vs ask público'}</div></div>
       <div class="card"><div class="label">USDT/MXN Bitso</div><div class="value">${fmt(state.bitso?.price)}</div><div class="hint">bid ${fmt(state.bitso?.bid)} / ask ${fmt(state.bitso?.ask)}</div></div>
       <div class="card"><div class="label">USD/MXN spot</div><div class="value">${fmt(state.spot?.price)}</div><div class="hint">forex intradía</div></div>
       <div class="card"><div class="label">BTC ${state.btc?.price > 200000 ? '(MXN)' : '(USD)'}</div><div class="value">${state.btc?.price ? '$' + fmtUsdt(state.btc.price) : '—'}</div><div class="hint" style="color:${ind.btcZ > 1.5 ? 'var(--green)' : 'inherit'}">z ${ind.btcZ == null ? '—' : ind.btcZ.toFixed(2)} ${ind.btcZ > 1.5 ? '· alza → USDT barato' : '· correlación cripto'}</div></div>

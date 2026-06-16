@@ -5,6 +5,7 @@ import { insertTick, insertNews } from './queries.js';
 import { fetchBitso } from './sources/bitso.js';
 import { fetchSpot } from './sources/spot.js';
 import { fetchBtc } from './sources/btc.js';
+import { fetchRfq } from './sources/rfq.js';
 import { fetchNews } from './sources/news.js';
 import { evaluateSignal, indicatorSnapshot } from './signals.js';
 import { onSignal, onSlotCheck, onTraderTick } from './trader.js';
@@ -64,6 +65,17 @@ async function pollBtc() {
   }
 }
 
+// Precio real institucional (RFQ de Bitso) — SOLO LECTURA, referencia
+async function pollRfq() {
+  if (!CONFIG.BITSO_API_KEY) return;   // sin credenciales, se omite
+  try {
+    const t = await fetchRfq();
+    await insertTick({ ts: t.ts, source: 'rfq', price: t.price });
+  } catch (err) {
+    console.error(`[rfq] ${err.message}`);
+  }
+}
+
 async function pollSpot() {
   try {
     const t = await fetchSpot();
@@ -115,12 +127,13 @@ async function main() {
   startServer();
 
   // Primer ciclo inmediato (BTC primero para que la señal lo tenga disponible)
-  await Promise.allSettled([pollBtc(), pollSpot(), pollNews()]);
+  await Promise.allSettled([pollBtc(), pollSpot(), pollNews(), pollRfq()]);
   await pollBitso();
 
   setInterval(pollBitso, CONFIG.BITSO_POLL_MS);
   setInterval(pollSpot, CONFIG.SPOT_POLL_MS);
   setInterval(pollBtc, CONFIG.BTC_POLL_MS);
+  setInterval(pollRfq, CONFIG.RFQ_POLL_MS);
   setInterval(pollNews, CONFIG.NEWS_POLL_MS);
   setInterval(minuteTick, CONFIG.EVAL_POLL_MS);
 
