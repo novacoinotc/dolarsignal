@@ -4,12 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DolarSignal — Laboratorio USDT/MXN</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root {
     --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e;
@@ -92,7 +87,7 @@
     <span class="ctrl"><button id="btn-rfq" class="on">⭐RFQ</button><button id="btn-spot">Spot</button><button id="btn-reset">⟲</button></span>
   </div>
   <div style="font-size:10px;color:var(--muted);margin:2px 0 6px">Zoom: rueda/pellizco · arrastra = mover · ▲ compra ▼ venta</div>
-  <div id="chart-box"><canvas id="chart"></canvas></div>
+  <div id="chart-box"></div>
 </div>
 
 <div class="grid cols-3">
@@ -136,21 +131,12 @@ const deltaCell = (o,h)=>{ const x=(o||[]).find(z=>z.horizon_min===h); return x?
 const COLORS={ twap:'#8b949e',bot:'#3fb950',aggressive:'#f85149',sessions:'#a371f7',friday:'#d29922',smart:'#58a6ff',trader:'#ff7b72', bot_ai:'#56d364',aggressive_ai:'#ffa198',smart_ai:'#d2a8ff' };
 const LABELS={ twap:'Pareja',bot:'Cauteloso',aggressive:'Agresivo',sessions:'Sesiones',friday:'Viernes',smart:'Inteligente', bot_ai:'Cauteloso IA',aggressive_ai:'Agresivo IA',smart_ai:'Inteligente IA' };
 
-// Registrar plugins/controladores de forma defensiva (no rompen si faltan)
-try { if (window.ChartZoom) Chart.register(window.ChartZoom); } catch(e){}
-let FINANCIAL_OK = false;
-try {
-  const fin = window.ChartFinancial || window['chartjs-chart-financial'];
-  if (fin && fin.CandlestickController) {
-    Chart.register(fin.CandlestickController, fin.CandlestickElement, fin.OhlcController, fin.OhlcElement);
-    FINANCIAL_OK = true;
-  } else if (Chart.registry.controllers.items && Chart.registry.controllers.items.candlestick) {
-    FINANCIAL_OK = true; // auto-registrado por el UMD
-  }
-} catch(e){}
-
-const chartState = { type:'line', source:'bitso', interval:15, hours:24, showRfq:true, showSpot:false };
-let chart, lastTrades = [];
+// ===== Gráfica: TradingView Lightweight Charts (robusta, velas nativas) =====
+const chartState = { type:'candles', source:'bitso', hours:24, showRfq:true, showSpot:false };
+let lwChart=null, lastTrades=[];
+const intervalFor = h => h<=24?15:h<=72?60:240;       // min por vela según el rango
+const toSec = ms => Math.floor(Number(ms)/1000);
+const dedupe = arr => { const m=new Map(); for(const x of arr) m.set(x.time,x); return [...m.values()].sort((a,b)=>a.time-b.time); };
 
 function buildCtrl(el, opts, key, label){
   el.innerHTML = opts.map(o=>`<button data-v="${o}" class="${chartState[key]==o?'on':''}">${label(o)}</button>`).join('');
@@ -160,64 +146,68 @@ function buildCtrl(el, opts, key, label){
     loadChart();
   });
 }
-buildCtrl($('ctrl-type'), ['line','candles'], 'type', v=> v==='line'?'Línea':(FINANCIAL_OK?'Velas':'Velas (n/d)'));
+buildCtrl($('ctrl-type'), ['candles','line'], 'type', v=> v==='candles'?'Velas':'Línea');
 buildCtrl($('ctrl-src'), ['bitso','rfq'], 'source', v=> v==='bitso'?'Bitso':'RFQ');
 buildCtrl($('ctrl-range'), [24,72,168], 'hours', v=> v===24?'24h':v===72?'3d':'7d');
 $('btn-rfq').onclick=()=>{ chartState.showRfq=!chartState.showRfq; $('btn-rfq').classList.toggle('on',chartState.showRfq); loadChart(); };
 $('btn-spot').onclick=()=>{ chartState.showSpot=!chartState.showSpot; $('btn-spot').classList.toggle('on',chartState.showSpot); loadChart(); };
-$('btn-reset').onclick=()=>{ if(chart&&chart.resetZoom) chart.resetZoom(); };
+$('btn-reset').onclick=()=>{ if(lwChart) lwChart.timeScale().fitContent(); };
+
+function makeChart(){
+  if(lwChart){ lwChart.remove(); lwChart=null; }
+  const tz='America/Mexico_City';
+  lwChart = LightweightCharts.createChart($('chart-box'), {
+    autoSize:true,
+    layout:{ background:{type:'solid',color:'#161b22'}, textColor:'#8b949e', fontSize:11 },
+    grid:{ vertLines:{color:'#21262d'}, horzLines:{color:'#21262d'} },
+    rightPriceScale:{ borderColor:'#30363d' },
+    crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
+    timeScale:{ borderColor:'#30363d', timeVisible:true, secondsVisible:false,
+      tickMarkFormatter: t => new Date(t*1000).toLocaleTimeString('es-MX',{timeZone:tz,hour:'2-digit',minute:'2-digit'}) },
+    localization:{ locale:'es-MX',
+      priceFormatter: p => Number(p).toFixed(4),
+      timeFormatter: t => new Date(t*1000).toLocaleString('es-MX',{timeZone:tz,month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) },
+  });
+}
 
 async function loadChart(){
   try{
-    const d = await fetch(`/api/ohlc?source=${chartState.source}&interval=${chartState.interval}&hours=${chartState.hours}`).then(r=>r.json());
-    renderChart(d, lastTrades);
+    const iv = intervalFor(chartState.hours);
+    const d = await fetch(`/api/ohlc?source=${chartState.source}&interval=${iv}&hours=${chartState.hours}`).then(r=>r.json());
+    renderChart(d, lastTrades, iv);
   }catch(e){ console.error(e); }
 }
 
-function renderChart(d, trades){
-  const candles = (d.candles||[]).map(c=>({ x:Number(c.t), o:+c.o, h:+c.h, l:+c.l, c:+c.c }));
-  const buys = (trades||[]).filter(t=>t.reason==='signal'||t.reason==='buy').map(t=>({x:t.ts,y:t.price}));
-  const sells = (trades||[]).filter(t=>t.reason==='sell').map(t=>({x:t.ts,y:t.price}));
-  const srcLabel = chartState.source==='bitso'?'USDT/MXN (Bitso)':'Nuestro precio (RFQ)';
-  const useCandles = chartState.type==='candles' && FINANCIAL_OK && candles.length;
+function renderChart(d, trades, iv){
+  if(!window.LightweightCharts) return;
+  makeChart();
+  const candles = dedupe((d.candles||[]).map(c=>({ time:toSec(c.t), open:+c.o, high:+c.h, low:+c.l, close:+c.c })));
 
-  const datasets = [];
-  if (useCandles){
-    datasets.push({ label:srcLabel, type:'candlestick', data:candles,
-      color:{ up:'#3fb950', down:'#f85149', unchanged:'#8b949e' },
-      borderColor:{ up:'#3fb950', down:'#f85149', unchanged:'#8b949e' } });
+  let main;
+  if(chartState.type==='candles'){
+    main = lwChart.addCandlestickSeries({ upColor:'#3fb950',downColor:'#f85149',borderVisible:false,wickUpColor:'#3fb950',wickDownColor:'#f85149',priceLineColor:'#58a6ff' });
+    main.setData(candles);
   } else {
-    datasets.push({ label:srcLabel, type:'line', data:candles.map(c=>({x:c.x,y:c.c})), borderColor:'#58a6ff', borderWidth:1.6, pointRadius:0, tension:.12 });
+    main = lwChart.addLineSeries({ color:'#58a6ff', lineWidth:2, priceLineColor:'#58a6ff' });
+    main.setData(candles.map(c=>({ time:c.time, value:c.close })));
   }
-  if (chartState.showRfq && chartState.source!=='rfq')
-    datasets.push({ label:'⭐ RFQ', type:'line', data:(d.rfqLine||[]).map(c=>({x:c.bucket,y:c.price})), borderColor:'#e3b341', borderWidth:1.5, pointRadius:0, tension:.12 });
-  if (chartState.showSpot)
-    datasets.push({ label:'USD/MXN spot', type:'line', data:(d.spotLine||[]).map(c=>({x:c.bucket,y:c.price})), borderColor:'#6e7681', borderWidth:1, pointRadius:0, borderDash:[4,3], tension:.12 });
-  datasets.push({ label:'Compras', type:'scatter', data:buys, pointStyle:'triangle', pointRadius:6, backgroundColor:'#3fb950', borderColor:'#0d1117' });
-  datasets.push({ label:'Ventas', type:'scatter', data:sells, pointStyle:'triangle', rotation:180, pointRadius:6, backgroundColor:'#f85149', borderColor:'#0d1117' });
-
-  // Rango temporal explícito (evita que el eje se desvíe). Eje LINEAL con formato manual
-  // para la línea (sin depender de luxon); eje 'time' solo para velas.
-  const xs = [...candles.map(c=>c.x), ...buys.map(p=>p.x), ...sells.map(p=>p.x), ...(d.rfqLine||[]).map(c=>c.bucket)].filter(Boolean);
-  const xMin = xs.length?Math.min(...xs):undefined, xMax = xs.length?Math.max(...xs):undefined;
-
-  const xScale = useCandles
-    ? { type:'time', min:xMin, max:xMax, time:{ tooltipFormat:'dd LLL HH:mm', displayFormats:{ minute:'HH:mm',hour:'HH:mm',day:'dd LLL',week:'dd LLL',month:'LLL yy' } },
-        ticks:{ color:'#8b949e', maxTicksLimit:8, source:'auto' }, grid:{ color:'#21262d' } }
-    : { type:'linear', min:xMin, max:xMax,
-        ticks:{ color:'#8b949e', maxTicksLimit:8, callback:v=>hm(v) }, grid:{ color:'#21262d' } };
-
-  const options = {
-    maintainAspectRatio:false, animation:false, parsing:true,
-    scales:{ x:xScale, y:{ position:'right', ticks:{ color:'#8b949e' }, grid:{ color:'#21262d' } } },
-    plugins:{
-      legend:{ labels:{ color:'#e6edf3', boxWidth:10, font:{size:10} } },
-      tooltip:{ callbacks:{ title: items => items.length? hm(items[0].parsed.x):'' } },
-      zoom:{ zoom:{ wheel:{enabled:true}, pinch:{enabled:true}, mode:'x' }, pan:{ enabled:true, mode:'x' } },
-    },
-  };
-  if (chart) chart.destroy();
-  chart = new Chart($('chart'), { data:{ datasets }, options });
+  if(chartState.showRfq && chartState.source!=='rfq'){
+    const r = lwChart.addLineSeries({ color:'#e3b341', lineWidth:2, priceLineVisible:false, lastValueVisible:false, title:'RFQ' });
+    r.setData(dedupe((d.rfqLine||[]).map(c=>({ time:toSec(c.bucket), value:+c.price }))));
+  }
+  if(chartState.showSpot){
+    const s = lwChart.addLineSeries({ color:'#6e7681', lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false, title:'spot' });
+    s.setData(dedupe((d.spotLine||[]).map(c=>({ time:toSec(c.bucket), value:+c.price }))));
+  }
+  // Marcas de compra/venta (alineadas al bucket de la vela para que siempre se vean)
+  const ms = iv*60000;
+  const snap = ts => Math.floor(Number(ts)/ms)*ms/1000;
+  const mk = [
+    ...(trades||[]).filter(t=>['signal','buy','ai'].includes(t.reason)).map(t=>({ time:snap(t.ts), position:'belowBar', color:'#3fb950', shape:'arrowUp' })),
+    ...(trades||[]).filter(t=>t.reason==='sell').map(t=>({ time:snap(t.ts), position:'aboveBar', color:'#f85149', shape:'arrowDown' })),
+  ].sort((a,b)=>a.time-b.time);
+  if(mk.length) try{ main.setMarkers(mk); }catch(e){}
+  lwChart.timeScale().fitContent();
 }
 
 function renderRfqHour(rows){
