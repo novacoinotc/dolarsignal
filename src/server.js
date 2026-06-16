@@ -6,6 +6,7 @@ import { CONFIG } from './config.js';
 import {
   lastTick, minuteCloses, ohlc, recentSignals, recentTrades, recentNews,
   performance, dailyPerformance, signalQuality, todayStats, traderPnl, fridayEffect, rfqByHour,
+  latestAnalysis, recentAnalyses,
 } from './queries.js';
 import { indicatorSnapshot } from './signals.js';
 import { upcomingEvents, activeBlackout } from './calendar.js';
@@ -18,9 +19,9 @@ function json(res, data) {
 }
 
 export async function buildState() {
-  const [bitso, spot, btc, rfq, rfqSell, indicators, today] = await Promise.all([
+  const [bitso, spot, btc, rfq, rfqSell, indicators, today, analyst, scout] = await Promise.all([
     lastTick('bitso'), lastTick('spot'), lastTick('btc'), lastTick('rfq'), lastTick('rfq_sell'),
-    indicatorSnapshot(), todayStats(),
+    indicatorSnapshot(), todayStats(), latestAnalysis('analyst'), latestAnalysis('scout'),
   ]);
   const blackout = activeBlackout();
   return {
@@ -32,6 +33,8 @@ export async function buildState() {
     indicators, today,
     blackout: blackout ? blackout.name : null,
     events: upcomingEvents(),
+    analyst: analyst ? { ts: Number(analyst.ts), ...analyst.payload } : null,
+    scout: scout ? { ts: Number(scout.ts), ...scout.payload } : null,
   };
 }
 
@@ -71,6 +74,10 @@ export const API = {
     friday: await fridayEffect(),
     rfqByHour: await rfqByHour(),
   }),
+  analysis: async () => {
+    const rows = await recentAnalyses('analyst', 15);
+    return rows.map(r => ({ ts: Number(r.ts), model: r.model, ...r.payload }));
+  },
 };
 
 export function startServer() {

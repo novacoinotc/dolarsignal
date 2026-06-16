@@ -304,3 +304,58 @@ function weekendKey(ts, tz) {
   const satTs = ts - ((dow === 0 ? 1 : 0)) * 86_400_000;
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(satTs));
 }
+
+// ── Agente de IA ────────────────────────────────────────────
+
+export function insertAnalysis(a) {
+  return q(
+    `INSERT INTO analysis (ts, kind, model, summary, payload) VALUES ($1, $2, $3, $4, $5)`,
+    [a.ts, a.kind, a.model, a.summary, JSON.stringify(a.payload)]
+  );
+}
+
+export async function latestAnalysis(kind) {
+  const rows = await q(`SELECT * FROM analysis WHERE kind = $1 ORDER BY ts DESC LIMIT 1`, [kind]);
+  return rows[0] || null;
+}
+
+export function recentAnalyses(kind, limit = 20) {
+  return q(`SELECT * FROM analysis WHERE kind = $1 ORDER BY ts DESC LIMIT $2`, [kind, limit]);
+}
+
+// Contexto compacto de mercado para el agente de IA
+export async function buildAnalysisContext(now = Date.now()) {
+  const { indicatorSnapshot } = await import('./signals.js');
+  const { upcomingEvents, activeBlackout } = await import('./calendar.js');
+  const [bitso, spot, btc, rfq, rfqSell, ind, perf] = await Promise.all([
+    lastTick('bitso'), lastTick('spot'), lastTick('btc'), lastTick('rfq'), lastTick('rfq_sell'),
+    indicatorSnapshot(now), performance(),
+  ]);
+  // Señales última hora por tier + último STRONG_BUY
+  const sigRows = await q(
+    `SELECT tier, COUNT(*)::INT n, MAX(ts) last_ts FROM signals WHERE ts > $1 GROUP BY tier`,
+    [now - 60 * 60_000]
+  );
+  const sig = {}; let lastStrongTs = null;
+  for (const r of sigRows) { sig[r.tier] = r.n; if (r.tier === 'STRONG_BUY') lastStrongTs = Number(r.last_ts); }
+  // Noticias relevantes recientes (< 3h, score >= 2.5)
+  const news = await q(
+    `SELECT title, score FROM news WHERE ts > $1 AND score >= 2.5 ORDER BY score DESC, ts DESC LIMIT 8`,
+    [now - 3 * 3600_000]
+  );
+  const blackout = activeBlackout(now);
+  const leaderRow = [...perf].filter(p => p.strategy !== 'twap' && p.centavosSaved != null)
+    .sort((a, b) => b.centavosSaved - a.centavosSaved)[0];
+  return {
+    now,
+    rfq: rfq?.price ?? null, rfqSell: rfqSell?.price ?? null,
+    bitso: bitso?.price ?? null, ask: bitso?.ask ?? null, spot: spot?.price ?? null,
+    premium: bitso && spot ? bitso.price / spot.price - 1 : null,
+    btc: btc?.price ?? null, btcZ: ind?.btcZ ?? null, z: ind?.z ?? null, rsi: ind?.rsi ?? null,
+    sig, lastStrongMin: lastStrongTs ? Math.round((now - lastStrongTs) / 60_000) : null,
+    blackout: blackout ? blackout.name : null,
+    events: upcomingEvents(now, 3).map(e => ({ name: e.name, inHours: Math.round((e.ts - now) / 3600_000) })),
+    leader: leaderRow ? { label: leaderRow.label, centavos: leaderRow.centavosSaved } : null,
+    news: news.map(n => ({ title: n.title.slice(0, 90), score: Number(n.score) })),
+  };
+}

@@ -9,6 +9,7 @@
     "init-db": "node -e \"import('./src/db.js').then(m => m.initSchema()).then(() => { console.log('Schema OK'); process.exit(0); })\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.2",
     "pg": "^8.13.1"
   },
   "engines": {

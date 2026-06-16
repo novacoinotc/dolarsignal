@@ -12,6 +12,8 @@ import { onSignal, onSlotCheck, onTraderTick } from './trader.js';
 import { evaluateOutcomes } from './outcomes.js';
 import { alertSignal, alertNews, sendAlert } from './alerts.js';
 import { allEvents, upcomingEvents } from './calendar.js';
+import { buildAnalysisContext, insertAnalysis, latestAnalysis } from './queries.js';
+import { runScout, runAnalyst, aiEnabled } from './analyst.js';
 import { startServer } from './server.js';
 
 const NEWS_ALERT_THRESHOLD = 4; // score mínimo para alertar una noticia
@@ -25,6 +27,8 @@ let lastAlertTs = 0;
 // Precios de ejecución del paper trading = RFQ real; si aún no hay, usa el público
 const buyPrice = () => lastRfqPrice || lastBitsoPrice;
 const sellPrice = () => lastRfqSellPrice || lastBitsoPrice;
+
+let lastAnalystTs = 0;   // última vez que corrió Opus (control de costo)
 
 async function pollBitso() {
   try {
@@ -118,13 +122,48 @@ async function pollNews() {
 
 async function minuteTick() {
   try {
-    const trades = await onSlotCheck(Date.now(), execPrice());   // slots al precio RFQ real
+    const trades = await onSlotCheck(Date.now(), buyPrice());   // slots al precio RFQ real
     if (trades.length) {
       console.log(`🕐 [${cdmxTime()}] Slots: ${trades.length} estrategias compraron @ ${trades[0].price.toFixed(4)} (RFQ)`);
     }
     await evaluateOutcomes();
   } catch (err) {
     console.error(`[minute] ${err.message}`);
+  }
+}
+
+// Agente de IA: el scout (Haiku) revisa cada minuto; si ve algo, escala a Opus.
+async function agentTick() {
+  if (!aiEnabled() || Date.now() - startupTs < 60_000) return;
+  try {
+    const now = Date.now();
+    const ctx = await buildAnalysisContext(now);
+
+    const scout = await runScout(ctx);
+    await insertAnalysis({ ts: now, kind: 'scout', model: CONFIG.SCOUT_MODEL, summary: scout.reason, payload: scout });
+
+    // ¿Escalar a Opus? Por urgencia del scout, por STRONG_BUY/ventana de riesgo,
+    // o porque ya pasó demasiado tiempo desde el último análisis profundo.
+    const sinceAnalyst = now - lastAnalystTs;
+    const hardTrigger = scout.urgency === 'high' || (ctx.lastStrongMin != null && ctx.lastStrongMin <= 1) || ctx.blackout;
+    const softTrigger = scout.interesting && scout.urgency !== 'low';
+    const escalate = sinceAnalyst >= CONFIG.ANALYST_MAX_GAP_MS
+      || (hardTrigger && sinceAnalyst >= 60_000)
+      || (softTrigger && sinceAnalyst >= CONFIG.ANALYST_MIN_GAP_MS);
+
+    if (escalate) {
+      const verdict = await runAnalyst(ctx, scout.reason);
+      lastAnalystTs = now;
+      await insertAnalysis({ ts: now, kind: 'analyst', model: CONFIG.ANALYST_MODEL, summary: verdict.headline, payload: verdict });
+      console.log(`🤖 [${cdmxTime()}] Opus: ${verdict.stance} (${verdict.confidence}%) — ${verdict.headline}`);
+      if (verdict.stance === 'COMPRAR_AHORA' && verdict.confidence >= 70) {
+        await sendAlert(`🤖 Análisis IA: ${verdict.stance} (${verdict.confidence}%)`, verdict.headline + '\n\n' + verdict.reasoning);
+      }
+    } else if (scout.interesting) {
+      console.log(`👀 [${cdmxTime()}] Scout (${scout.urgency}): ${scout.reason}`);
+    }
+  } catch (err) {
+    console.error(`[agent] ${err.message}`);
   }
 }
 
@@ -145,14 +184,17 @@ async function main() {
   await Promise.allSettled([pollBtc(), pollSpot(), pollNews(), pollRfq()]);
   await pollBitso();
 
+  console.log(`   Agente IA: ${aiEnabled() ? `scout ${CONFIG.SCOUT_MODEL} + analista ${CONFIG.ANALYST_MODEL}` : 'desactivado (falta ANTHROPIC_API_KEY)'}`);
+
   setInterval(pollBitso, CONFIG.BITSO_POLL_MS);
   setInterval(pollSpot, CONFIG.SPOT_POLL_MS);
   setInterval(pollBtc, CONFIG.BTC_POLL_MS);
   setInterval(pollRfq, CONFIG.RFQ_POLL_MS);
   setInterval(pollNews, CONFIG.NEWS_POLL_MS);
   setInterval(minuteTick, CONFIG.EVAL_POLL_MS);
+  if (aiEnabled()) setInterval(agentTick, CONFIG.SCOUT_POLL_MS);
 
-  await sendAlert('🚀 DolarSignal iniciado', `7 estrategias en paralelo · monitoreando USDT/MXN, USD/MXN, BTC y noticias. Puerto ${CONFIG.PORT}.`);
+  await sendAlert('🚀 DolarSignal iniciado', `7 estrategias + agente IA · monitoreando USDT/MXN, USD/MXN, BTC y noticias. Puerto ${CONFIG.PORT}.`);
 }
 
 main().catch(err => {

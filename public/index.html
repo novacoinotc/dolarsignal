@@ -72,6 +72,11 @@
 
 <div class="banner" id="blackout"></div>
 
+<div class="panel" id="ai-panel" style="display:none;border-color:#8957e5;background:#1a1226">
+  <h2 style="color:#d2a8ff">🤖 Agente IA — análisis de Opus 4.8 <span class="pill" id="ai-when"></span></h2>
+  <div id="ai-body"></div>
+</div>
+
 <div class="grid cards" id="cards"></div>
 
 <div class="panel">
@@ -252,6 +257,29 @@ async function refresh() {
     $('updated').textContent = 'actualizado ' + when(state.now);
     $('blackout').style.display = state.blackout ? 'block' : 'none';
     if (state.blackout) $('blackout').textContent = '⛔ VENTANA DE RIESGO ACTIVA: ' + state.blackout + ' — compras por señal bloqueadas';
+
+    // Panel del agente IA
+    const a = state.analyst;
+    if (a) {
+      const STANCE = {
+        COMPRAR_AHORA: { txt: '🟢 COMPRAR AHORA', col: 'var(--green)' },
+        COMPRAR_PARCIAL: { txt: '🟡 COMPRAR PARCIAL', col: 'var(--yellow)' },
+        ESPERAR: { txt: '⏸️ ESPERAR', col: 'var(--blue)' },
+        EVITAR: { txt: '🔴 EVITAR', col: 'var(--red)' },
+      };
+      const s = STANCE[a.stance] || { txt: a.stance, col: 'var(--text)' };
+      $('ai-panel').style.display = 'block';
+      $('ai-when').textContent = a.ts ? 'hace ' + Math.max(0, Math.round((state.now - a.ts) / 60000)) + ' min' : '';
+      $('ai-body').innerHTML = `
+        <div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px">
+          <span style="font-size:18px;font-weight:700;color:${s.col}">${s.txt}</span>
+          <span style="color:var(--muted)">confianza ${a.confidence}%</span>
+          <span style="font-weight:600">${a.headline || ''}</span>
+        </div>
+        <div style="font-size:12px;margin-bottom:6px">${a.reasoning || ''}</div>
+        <div style="font-size:11px;color:var(--muted)">📊 ${a.marketRead || ''} · ⏱️ ${a.horizon || ''}${(a.risks && a.risks.length) ? ' · ⚠️ ' + a.risks.join('; ') : ''}</div>
+        ${state.scout ? `<div style="font-size:10.5px;color:var(--muted);margin-top:6px;border-top:1px solid #30363d;padding-top:5px">👀 Scout (${state.scout.urgency || ''}): ${state.scout.reason || ''}</div>` : ''}`;
+    }
 
     const ind = state.indicators || {};
     $('cards').innerHTML = `

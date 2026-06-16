@@ -69,6 +69,14 @@ export const CONFIG = {
   RFQ_QUOTE_USDT: Number(process.env.RFQ_QUOTE_USDT || 5_000),  // referencia de venta (USDT)
   RFQ_POLL_MS: Number(process.env.RFQ_POLL_MS || 30_000),       // cotiza seguido: es el precio de ejecución del paper trading
 
+  // ── Agente de IA (scout Haiku + analista Opus) ────────────
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+  SCOUT_MODEL: process.env.SCOUT_MODEL || 'claude-haiku-4-5',   // "el chismoso": revisa todo cada minuto, barato
+  ANALYST_MODEL: process.env.ANALYST_MODEL || 'claude-opus-4-8', // toma las decisiones cuando el scout escala
+  SCOUT_POLL_MS: 60_000,            // el scout revisa cada minuto
+  ANALYST_MIN_GAP_MS: 5 * 60_000,   // no llamar a Opus más seguido que esto (salvo urgencia alta)
+  ANALYST_MAX_GAP_MS: 30 * 60_000,  // pero al menos cada 30 min hay un análisis fresco de Opus
+
   // ── Dashboard local / Railway ─────────────────────────────
   PORT: Number(process.env.PORT || 8420),
 };

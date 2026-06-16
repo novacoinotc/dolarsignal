@@ -77,5 +77,16 @@ export async function initSchema() {
       keywords JSONB NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_news_ts ON news (ts);
+
+    -- Análisis del agente de IA: 'scout' (Haiku, cada min) y 'analyst' (Opus, decisiones)
+    CREATE TABLE IF NOT EXISTS analysis (
+      id BIGSERIAL PRIMARY KEY,
+      ts BIGINT NOT NULL,
+      kind TEXT NOT NULL,            -- 'scout' | 'analyst'
+      model TEXT NOT NULL,
+      summary TEXT NOT NULL,         -- frase corta para mostrar
+      payload JSONB NOT NULL         -- objeto completo (stance, confidence, reasoning, etc.)
+    );
+    CREATE INDEX IF NOT EXISTS idx_analysis ON analysis (kind, ts);
   `);
 }
