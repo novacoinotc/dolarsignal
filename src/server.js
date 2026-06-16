@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { CONFIG } from './config.js';
 import {
-  lastTick, minuteCloses, recentSignals, recentTrades, recentNews,
-  performance, dailyPerformance, signalQuality, todayStats, traderPnl, fridayEffect,
+  lastTick, minuteCloses, ohlc, recentSignals, recentTrades, recentNews,
+  performance, dailyPerformance, signalQuality, todayStats, traderPnl, fridayEffect, rfqByHour,
 } from './queries.js';
 import { indicatorSnapshot } from './signals.js';
 import { upcomingEvents, activeBlackout } from './calendar.js';
@@ -18,13 +18,14 @@ function json(res, data) {
 }
 
 export async function buildState() {
-  const [bitso, spot, btc, rfq, indicators, today] = await Promise.all([
-    lastTick('bitso'), lastTick('spot'), lastTick('btc'), lastTick('rfq'), indicatorSnapshot(), todayStats(),
+  const [bitso, spot, btc, rfq, rfqSell, indicators, today] = await Promise.all([
+    lastTick('bitso'), lastTick('spot'), lastTick('btc'), lastTick('rfq'), lastTick('rfq_sell'),
+    indicatorSnapshot(), todayStats(),
   ]);
   const blackout = activeBlackout();
   return {
     now: Date.now(),
-    bitso, spot, btc, rfq,
+    bitso, spot, btc, rfq, rfqSell,
     premium: bitso && spot ? bitso.price / spot.price - 1 : null,
     // RFQ vs precio público de COMPRA (ask): positivo = nuestro RFQ es más barato que el libro
     rfqEdge: rfq && bitso ? ((bitso.ask || bitso.price) - rfq.price) * 100 : null,
@@ -46,6 +47,19 @@ export const API = {
     ]);
     return { bitso, spot, btc, rfq };
   },
+  ohlc: async (params) => {
+    const hours = Math.min(Number(params.hours || 24), 720);
+    const interval = Math.min(Math.max(Number(params.interval || 15), 1), 240);
+    const since = Date.now() - hours * 3600_000;
+    const source = ['bitso', 'rfq', 'spot'].includes(params.source) ? params.source : 'bitso';
+    // velas del instrumento + líneas de referencia (RFQ compra y spot) por minuto
+    const [candles, rfqLine, spotLine] = await Promise.all([
+      ohlc(source, interval, since),
+      minuteCloses('rfq', since),
+      minuteCloses('spot', since),
+    ]);
+    return { candles, rfqLine, spotLine, interval, source };
+  },
   signals: () => recentSignals(),
   trades: () => recentTrades(),
   news: () => recentNews(),
@@ -55,6 +69,7 @@ export const API = {
     quality: await signalQuality(),
     trader: await traderPnl(),
     friday: await fridayEffect(),
+    rfqByHour: await rfqByHour(),
   }),
 };
 

@@ -63,6 +63,21 @@ export function minuteCloses(source, sinceTs) {
   );
 }
 
+// Velas OHLC por intervalo (minutos) para una fuente — para la gráfica de velas
+export function ohlc(source, intervalMin, sinceTs) {
+  const ms = intervalMin * 60_000;
+  return q(
+    `SELECT (ts / $3) * $3 AS t,
+            (array_agg(price ORDER BY ts ASC))[1]  AS o,
+            MAX(price) AS h,
+            MIN(price) AS l,
+            (array_agg(price ORDER BY ts DESC))[1] AS c
+     FROM ticks WHERE source = $1 AND ts >= $2
+     GROUP BY t ORDER BY t`,
+    [source, sinceTs, ms]
+  );
+}
+
 export async function priceNear(source, ts) {
   const rows = await q(
     `SELECT price FROM ticks WHERE source = $1 AND ts BETWEEN $2 AND $3 ORDER BY ABS(ts - $4) LIMIT 1`,
@@ -166,6 +181,25 @@ export function signalQuality() {
   `);
 }
 
+// RFQ vs precio público por hora CDMX (últimos 7 días): ¿en qué horas nuestro
+// precio real le gana al público? Positivo = RFQ más barato que Bitso público.
+export async function rfqByHour(days = 7) {
+  const rows = await q(`
+    SELECT EXTRACT(HOUR FROM to_timestamp(ts/1000) AT TIME ZONE $2)::INT AS hr,
+           source, AVG(price)::float8 AS avgp, COUNT(*)::INT AS n
+    FROM ticks WHERE source IN ('rfq','bitso') AND ts > $1
+    GROUP BY hr, source
+  `, [Date.now() - days * 86_400_000, CONFIG.TIMEZONE]);
+  const byHour = {};
+  for (const r of rows) (byHour[r.hr] ??= {})[r.source] = r.avgp;
+  const out = [];
+  for (let h = 0; h < 24; h++) {
+    const b = byHour[h]?.bitso, r = byHour[h]?.rfq;
+    out.push({ hour: h, edgeCentavos: b && r ? (b - r) * 100 : null });
+  }
+  return out;
+}
+
 // Estado de presupuesto de hoy para cada acumuladora
 export async function todayStats(now = Date.now()) {
   const date = tradingDate(now);
@@ -194,9 +228,10 @@ export async function traderPosition() {
   return { usdt, avgCost: usdt > 0 ? cost / usdt : 0 };
 }
 
-// Ganancia realizada del trader (FIFO por costo promedio)
+// P&L del trader: realizada (ventas a precio RFQ de venta) + no realizada
+// (posición abierta marcada al precio de venta RFQ actual = a cuánto nos la pagarían hoy)
 export async function traderPnl() {
-  const rows = await q(`SELECT reason, mxn, usdt, ts FROM trades WHERE strategy = 'trader' ORDER BY ts`);
+  const rows = await q(`SELECT reason, mxn, usdt FROM trades WHERE strategy = 'trader' ORDER BY ts`);
   let usdt = 0, cost = 0, realized = 0, sells = 0, buys = 0;
   for (const r of rows) {
     if (r.reason === 'buy') { usdt += Number(r.usdt); cost += Number(r.mxn); buys++; }
@@ -207,7 +242,15 @@ export async function traderPnl() {
       if (usdt < 1e-6) { usdt = 0; cost = 0; }
     }
   }
-  return { realizedMxn: realized, openUsdt: usdt, avgCost: usdt > 0 ? cost / usdt : 0, buys, sells };
+  const avgCost = usdt > 0 ? cost / usdt : 0;
+  // Marca a mercado al precio de venta real (rfq_sell), o público si no hay
+  const sellTick = (await lastTick('rfq_sell')) || (await lastTick('bitso'));
+  const sellPrice = sellTick ? sellTick.price : avgCost;
+  const unrealizedMxn = usdt > 0 ? usdt * sellPrice - cost : 0;
+  return {
+    realizedMxn: realized, unrealizedMxn, totalMxn: realized + unrealizedMxn,
+    openUsdt: usdt, avgCost, sellPrice, buys, sells,
+  };
 }
 
 // ── Monitor del efecto viernes ──────────────────────────────

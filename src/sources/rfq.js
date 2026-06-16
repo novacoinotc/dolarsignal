@@ -1,11 +1,13 @@
-// Lector del precio RFQ de Bitso = NUESTRO precio institucional real de compra.
+// Lector del precio RFQ de Bitso = NUESTRO precio institucional real.
 //
 // ⚠️ SOLO LECTURA: usa exclusivamente "Request a Quote" (POST /rfq/v1/quotes), que
 // según la doc de Bitso es puramente informativo y NO ejecuta ninguna operación.
 // NUNCA llama a "Convert a Quote" ni a ningún endpoint que cierre/ejecute trades.
 //
-// Cotiza la compra de USDT pagando MXN (source=MXN, target=USDT) para obtener el
-// precio real en MXN por USDT, comparable con el precio público de Bitso.
+// Cotiza en ambos sentidos para conocer el precio real de COMPRA y de VENTA:
+//   buy:  pagamos MXN, recibimos USDT  (lo que nos cuesta comprar)
+//   sell: entregamos USDT, recibimos MXN (lo que nos pagan al vender)
+// Ambos devuelven el precio en MXN por USDT, comparables entre sí.
 import crypto from 'node:crypto';
 import { CONFIG } from '../config.js';
 
@@ -19,22 +21,11 @@ function authHeader(method, path, body) {
   return `Bitso ${CONFIG.BITSO_API_KEY}:${nonce}:${signature}`;
 }
 
-// Devuelve el precio real (MXN por USDT) para una compra de referencia.
-export async function fetchRfq() {
-  if (!CONFIG.BITSO_API_KEY || !CONFIG.BITSO_API_SECRET) {
-    throw new Error('Faltan BITSO_API_KEY / BITSO_API_SECRET');
-  }
-  const payload = JSON.stringify({
-    source: 'mxn',
-    target: 'usdt',
-    source_amount: String(CONFIG.RFQ_QUOTE_MXN),
-  });
+async function requestQuote(payloadObj) {
+  const payload = JSON.stringify(payloadObj);
   const res = await fetch(BASE + PATH, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: authHeader('POST', PATH, payload),
-    },
+    headers: { 'Content-Type': 'application/json', Authorization: authHeader('POST', PATH, payload) },
     body: payload,
     signal: AbortSignal.timeout(12_000),
   });
@@ -43,11 +34,23 @@ export async function fetchRfq() {
     throw new Error(`RFQ HTTP ${res.status} ${text.slice(0, 160)}`);
   }
   const j = await res.json();
-  const q = j.payload || j;                       // tolera envoltura
-  const srcAmt = Number(q.source_amount);
-  const tgtAmt = Number(q.target_amount);
-  if (!srcAmt || !tgtAmt) throw new Error(`RFQ sin amounts: ${JSON.stringify(q).slice(0, 160)}`);
-  // precio = MXN pagados / USDT recibidos = MXN por USDT (nuestro costo real)
-  const price = srcAmt / tgtAmt;
-  return { ts: Date.now(), price, rate: Number(q.rate) || null, id: q.id || null };
+  return j.payload || j;
+}
+
+// Precio real de COMPRA (MXN por USDT que pagamos)
+export async function fetchRfqBuy() {
+  if (!CONFIG.BITSO_API_KEY) throw new Error('Faltan credenciales Bitso');
+  const q = await requestQuote({ source: 'mxn', target: 'usdt', source_amount: String(CONFIG.RFQ_QUOTE_MXN) });
+  const src = Number(q.source_amount), tgt = Number(q.target_amount);
+  if (!src || !tgt) throw new Error(`RFQ buy sin amounts: ${JSON.stringify(q).slice(0, 120)}`);
+  return { ts: Date.now(), price: src / tgt, id: q.id || null };   // MXN pagados / USDT recibidos
+}
+
+// Precio real de VENTA (MXN por USDT que nos pagan)
+export async function fetchRfqSell() {
+  if (!CONFIG.BITSO_API_KEY) throw new Error('Faltan credenciales Bitso');
+  const q = await requestQuote({ source: 'usdt', target: 'mxn', source_amount: String(CONFIG.RFQ_QUOTE_USDT) });
+  const src = Number(q.source_amount), tgt = Number(q.target_amount);
+  if (!src || !tgt) throw new Error(`RFQ sell sin amounts: ${JSON.stringify(q).slice(0, 120)}`);
+  return { ts: Date.now(), price: tgt / src, id: q.id || null };   // MXN recibidos / USDT entregados
 }

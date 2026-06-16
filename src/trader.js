@@ -80,30 +80,32 @@ export async function onSignal(signal, execPrice) {
 }
 
 // Trader: compra barato y VENDE caro en puntos clave. Mide ganancia realizada.
+//  buyPx  = precio RFQ de COMPRA (lo que pagamos)
+//  sellPx = precio RFQ de VENTA (lo que nos pagan, más bajo) — la venta se valúa aquí
 //  - signal (BUY/STRONG): compra si no excede el tope de inventario.
-//  - snapshot caro (z alto o RSI alto) y posición con ganancia: vende y realiza.
-export async function onTraderTick(now, price, signal, snapshot) {
-  if (!price) return null;
+//  - margen suficiente sobre el costo (al precio de venta real) o precio caro: vende.
+export async function onTraderTick(now, buyPx, sellPx, signal, snapshot) {
+  if (!buyPx || !sellPx) return null;
   if (now - lastTraderTs < CONFIG.SIGNAL_COOLDOWN_MS) return null;
 
   const pos = await traderPosition();   // { usdt, avgCost }
   let action = null;
 
-  // ¿Vender? toma de ganancia: el precio subió lo suficiente sobre el costo,
-  // o está estadísticamente caro (z/RSI altos) teniendo cualquier margen positivo.
-  const marginCentavos = pos.usdt > 0 ? (price - pos.avgCost) * 100 : 0;
+  // ¿Vender? El margen se mide al precio de VENTA real (a cuánto nos paga el RFQ),
+  // no al de compra — así la ganancia es la que de verdad realizaríamos.
+  const marginCentavos = pos.usdt > 0 ? (sellPx - pos.avgCost) * 100 : 0;
   const expensive = snapshot && ((snapshot.z != null && snapshot.z >= TRADER.sellZ) ||
                                  (snapshot.rsi != null && snapshot.rsi >= TRADER.sellRsi));
   if (pos.usdt > 0 && (marginCentavos >= TRADER.takeProfitCentavos || (expensive && marginCentavos > 0))) {
-    const sellMxn = Math.min(TRADER.sellChunk, pos.usdt * price);
-    action = await execute('trader', 'sell', sellMxn, price, null, now);
+    const sellMxn = Math.min(TRADER.sellChunk, pos.usdt * sellPx);
+    action = await execute('trader', 'sell', sellMxn, sellPx, null, now);
   }
-  // ¿Comprar? hay señal de dip y no excedemos el tope
+  // ¿Comprar? hay señal de dip y no excedemos el tope (al precio de compra real)
   else if ((signal?.tier === 'BUY' || signal?.tier === 'STRONG_BUY')) {
-    const posMxn = pos.usdt * price;
+    const posMxn = pos.usdt * buyPx;
     const chunk = signal.tier === 'STRONG_BUY' ? TRADER.strongBuyChunk : TRADER.buyChunk;
     if (posMxn + chunk <= TRADER.maxPositionMxn) {
-      action = await execute('trader', 'buy', chunk, price, signal.id, now);
+      action = await execute('trader', 'buy', chunk, buyPx, signal.id, now);
     }
   }
 

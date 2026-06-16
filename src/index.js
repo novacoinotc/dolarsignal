@@ -5,7 +5,7 @@ import { insertTick, insertNews } from './queries.js';
 import { fetchBitso } from './sources/bitso.js';
 import { fetchSpot } from './sources/spot.js';
 import { fetchBtc } from './sources/btc.js';
-import { fetchRfq } from './sources/rfq.js';
+import { fetchRfqBuy, fetchRfqSell } from './sources/rfq.js';
 import { fetchNews } from './sources/news.js';
 import { evaluateSignal, indicatorSnapshot } from './signals.js';
 import { onSignal, onSlotCheck, onTraderTick } from './trader.js';
@@ -17,12 +17,14 @@ import { startServer } from './server.js';
 const NEWS_ALERT_THRESHOLD = 4; // score mínimo para alertar una noticia
 const startupTs = Date.now();
 let lastBitsoPrice = null;
-let lastRfqPrice = null;        // precio REAL al que nos vende Bitso (RFQ) — precio de ejecución
+let lastRfqPrice = null;        // precio REAL de COMPRA (RFQ) — ejecución de compras
+let lastRfqSellPrice = null;    // precio REAL de VENTA (RFQ) — ejecución de ventas del trader
 let lastAlertedTier = null;
 let lastAlertTs = 0;
 
-// Precio de ejecución del paper trading = RFQ real; si aún no hay, usa el público
-const execPrice = () => lastRfqPrice || lastBitsoPrice;
+// Precios de ejecución del paper trading = RFQ real; si aún no hay, usa el público
+const buyPrice = () => lastRfqPrice || lastBitsoPrice;
+const sellPrice = () => lastRfqSellPrice || lastBitsoPrice;
 
 async function pollBitso() {
   try {
@@ -34,7 +36,7 @@ async function pollBitso() {
     const snapshot = await indicatorSnapshot(t.ts);
 
     if (signal) {
-      const trades = await onSignal(signal, execPrice());   // ejecuta al precio RFQ real
+      const trades = await onSignal(signal, buyPrice());   // ejecuta al precio RFQ real de compra
       // Alerta si sube de tier o pasaron >10 min desde la última
       const shouldAlert = signal.tier !== lastAlertedTier || t.ts - lastAlertTs > 10 * 60_000;
       if (shouldAlert) {
@@ -50,8 +52,8 @@ async function pollBitso() {
       lastAlertedTier = null;
     }
 
-    // Trader: compra/vende en puntos clave al precio RFQ real
-    const action = await onTraderTick(t.ts, execPrice(), signal, snapshot);
+    // Trader: compra al precio RFQ de compra, vende al precio RFQ de venta (real)
+    const action = await onTraderTick(t.ts, buyPrice(), sellPrice(), signal, snapshot);
     if (action) {
       console.log(`💱 [${cdmxTime()}] Trader ${action.reason.toUpperCase()}: $${action.mxn.toLocaleString('es-MX', { maximumFractionDigits: 0 })} @ ${action.price.toFixed(4)}`);
     }
@@ -69,16 +71,23 @@ async function pollBtc() {
   }
 }
 
-// Precio real institucional (RFQ de Bitso) — SOLO LECTURA. Es el precio de
-// ejecución del paper trading (al que de verdad nos vende Bitso).
+// Precio real institucional (RFQ de Bitso) — SOLO LECTURA. Cotiza COMPRA y VENTA;
+// son los precios de ejecución del paper trading (a los que de verdad opera Bitso).
 async function pollRfq() {
   if (!CONFIG.BITSO_API_KEY) return;   // sin credenciales, se omite
   try {
-    const t = await fetchRfq();
-    lastRfqPrice = t.price;
-    await insertTick({ ts: t.ts, source: 'rfq', price: t.price });
+    const b = await fetchRfqBuy();
+    lastRfqPrice = b.price;
+    await insertTick({ ts: b.ts, source: 'rfq', price: b.price });
   } catch (err) {
-    console.error(`[rfq] ${err.message}`);
+    console.error(`[rfq buy] ${err.message}`);
+  }
+  try {
+    const s = await fetchRfqSell();
+    lastRfqSellPrice = s.price;
+    await insertTick({ ts: s.ts, source: 'rfq_sell', price: s.price });
+  } catch (err) {
+    console.error(`[rfq sell] ${err.message}`);
   }
 }
 
