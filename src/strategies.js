@@ -39,6 +39,12 @@ export const ACCUMULATORS = {
   bot_ai:        { label: 'Cauteloso IA',   color: '#56d364', ai: true, slotPace: 1.0, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.02, aiNowPct: 0.05, sessionAware: false, fridayPreload: false },
   aggressive_ai: { label: 'Agresivo IA',    color: '#ffa198', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.08, aiNowPct: 0.20, sessionAware: false, fridayPreload: false },
   smart_ai:      { label: 'Inteligente IA', color: '#d2a8ff', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.08, aiNowPct: 0.20, sessionAware: true,  fridayPreload: true  },
+  // ── Momentum: ANTICIPA la subida. Compra fuerte cuando el precio viene subiendo
+  //    (z-score positivo), hay noticia de alto impacto, o BTC se cae (risk-off → dólar↑).
+  //    Lo opuesto a comprar el dip. Determinista (igual en vivo y en backtest).
+  momentum:      { label: 'Momentum IA', color: '#ff7b00', momentum: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
+                   momZBuy: 1.0, momZStrong: 2.0, momBuyPct: 0.08, momStrongPct: 0.20, momNews: 4.5, momBtcZ: -1.5,
+                   sessionAware: false, fridayPreload: false },
 };
 
 // Confianza mínima de Opus para que las gemelas IA actúen sobre un veredicto

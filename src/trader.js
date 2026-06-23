@@ -111,6 +111,33 @@ export async function onVerdict(verdict, execPrice) {
   return executed;
 }
 
+// Compra de las estrategias MOMENTUM: anticipa la subida. Compra fuerte cuando el
+// precio viene subiendo (z alto), hay noticia de alto impacto, o BTC se cae.
+// Es determinista (mismos inputs en vivo y en backtest). reason='mom'.
+const lastMomBuyTs = {};
+export async function onMomentum(now, z, btcZ, newsCatalyst, execPrice) {
+  if (!execPrice || z == null) return [];
+  const minutes = cdmxMinutes(now);
+  const date = tradingDate(now);
+  const executed = [];
+  for (const [name, cfg] of Object.entries(ACCUMULATORS)) {
+    if (!cfg.momentum) continue;
+    let pct = 0;
+    if (z >= cfg.momZStrong || newsCatalyst || (btcZ != null && btcZ <= cfg.momBtcZ)) pct = cfg.momStrongPct;
+    else if (z >= cfg.momZBuy) pct = cfg.momBuyPct;
+    if (pct <= 0) continue;
+    if (now - (lastMomBuyTs[name] || 0) < CONFIG.SIGNAL_COOLDOWN_MS) continue;
+    const plan = dayPlan(cfg, now);
+    if (plan.budget < 1 || minutes > plan.endMin) continue;
+    const remaining = plan.budget - await spent(date, name);
+    if (remaining < 1) continue;
+    const amount = Math.min(plan.budget * pct, remaining);
+    const trade = await execute(name, 'mom', amount, execPrice, null, now);
+    if (trade) { lastMomBuyTs[name] = now; executed.push(trade); }
+  }
+  return executed;
+}
+
 // Trader: compra barato y VENDE caro en puntos clave. Mide ganancia realizada.
 //  buyPx  = precio RFQ de COMPRA (lo que pagamos)
 //  sellPx = precio RFQ de VENTA (lo que nos pagan, más bajo) — la venta se valúa aquí

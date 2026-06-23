@@ -8,7 +8,7 @@ import { fetchBtc } from './sources/btc.js';
 import { fetchRfqBuy, fetchRfqSell } from './sources/rfq.js';
 import { fetchNews } from './sources/news.js';
 import { evaluateSignal, indicatorSnapshot } from './signals.js';
-import { onSignal, onSlotCheck, onTraderTick, onVerdict } from './trader.js';
+import { onSignal, onSlotCheck, onTraderTick, onVerdict, onMomentum } from './trader.js';
 import { evaluateOutcomes } from './outcomes.js';
 import { alertSignal, alertNews, sendAlert } from './alerts.js';
 import { allEvents, upcomingEvents } from './calendar.js';
@@ -29,6 +29,8 @@ const buyPrice = () => lastRfqPrice || lastBitsoPrice;
 const sellPrice = () => lastRfqSellPrice || lastBitsoPrice;
 
 let lastAnalystTs = 0;   // última vez que corrió Opus (control de costo)
+let lastCatalystTs = 0;  // última noticia de alto impacto (catalizador para Momentum)
+const newsCatalyst = () => Date.now() - lastCatalystTs < 30 * 60_000;
 
 async function pollBitso() {
   try {
@@ -55,6 +57,10 @@ async function pollBitso() {
     } else {
       lastAlertedTier = null;
     }
+
+    // Momentum: anticipa la subida (compra fuerte si z alto / noticia / BTC cae)
+    const mom = await onMomentum(t.ts, snapshot?.z, snapshot?.btcZ, newsCatalyst(), buyPrice());
+    if (mom.length) console.log(`🚀 [${cdmxTime()}] Momentum compró @ ${mom[0].price.toFixed(4)}`);
 
     // Trader: compra al precio RFQ de compra, vende al precio RFQ de venta (real)
     const action = await onTraderTick(t.ts, buyPrice(), sellPrice(), signal, snapshot);
@@ -109,8 +115,10 @@ async function pollNews() {
     const items = await fetchNews();
     for (const item of items) {
       const isNew = await insertNews(item);
-      // Solo alertar noticias nuevas, de alto impacto y recientes (< 2h)
       const isRecent = Date.now() - item.ts < 2 * 3600_000;
+      // Noticia de alto impacto reciente = catalizador para Momentum
+      if (isNew && isRecent && item.score >= 4.5) lastCatalystTs = Date.now();
+      // Alerta de noticias nuevas, de alto impacto
       if (isNew && isRecent && item.score >= NEWS_ALERT_THRESHOLD && Date.now() - startupTs > 60_000) {
         await alertNews(item);
       }
