@@ -8,12 +8,12 @@ import { fetchBtc } from './sources/btc.js';
 import { fetchRfqBuy, fetchRfqSell } from './sources/rfq.js';
 import { fetchNews } from './sources/news.js';
 import { evaluateSignal, indicatorSnapshot } from './signals.js';
-import { onSignal, onSlotCheck, onTraderTick, onVerdict, onMomentum } from './trader.js';
+import { onSignal, onSlotCheck, onTraderTick, onVerdict, onMomentum, onMomentumOpus } from './trader.js';
 import { evaluateOutcomes } from './outcomes.js';
 import { alertSignal, alertNews, sendAlert } from './alerts.js';
 import { allEvents, upcomingEvents } from './calendar.js';
 import { buildAnalysisContext, insertAnalysis, latestAnalysis } from './queries.js';
-import { runScout, runAnalyst, aiEnabled } from './analyst.js';
+import { runScout, runAnalyst, runMomentumAnalyst, aiEnabled } from './analyst.js';
 import { startServer } from './server.js';
 
 const NEWS_ALERT_THRESHOLD = 4; // score mínimo para alertar una noticia
@@ -169,6 +169,13 @@ async function agentTick() {
       if (aiTrades.length) {
         console.log(`🤖💰 [${cdmxTime()}] ${aiTrades.length} compras IA (${verdict.stance}) @ ${aiTrades[0].price.toFixed(4)}`);
       }
+      // Segundo cerebro: Opus con mentalidad de momentum (anticipa la subida)
+      try {
+        const mv = await runMomentumAnalyst(ctx);
+        await insertAnalysis({ ts: now, kind: 'momentum', model: CONFIG.ANALYST_MODEL, summary: mv.reason, payload: mv });
+        const mo = await onMomentumOpus(mv, buyPrice());
+        if (mo.length) console.log(`🧠🚀 [${cdmxTime()}] Momentum Opus (${mv.action}) compró @ ${mo[0].price.toFixed(4)}`);
+      } catch (e) { console.error('[momentum-opus]', e.message); }
       if (verdict.stance === 'COMPRAR_AHORA' && verdict.confidence >= 70) {
         await sendAlert(`🤖 Análisis IA: ${verdict.stance} (${verdict.confidence}%)`, verdict.headline + '\n\n' + verdict.reasoning);
       }

@@ -138,6 +138,36 @@ export async function onMomentum(now, z, btcZ, newsCatalyst, execPrice) {
   return executed;
 }
 
+// Compra de las estrategias MOMENTUM OPUS: anticipa la subida según el veredicto
+// de Opus-momentum (COMPRAR_FUERTE / COMPRAR). reason='momop'.
+const lastMomOpusBuyTs = {};
+export async function onMomentumOpus(verdict, execPrice) {
+  if (!verdict || !execPrice) return [];
+  const now = Date.now();
+  const minutes = cdmxMinutes(now);
+  const date = tradingDate(now);
+  const conf = verdict.confidence || 0;
+  const executed = [];
+  for (const [name, cfg] of Object.entries(ACCUMULATORS)) {
+    if (!cfg.momentumOpus) continue;
+    let pct = 0;
+    if (conf >= AI_MIN_CONFIDENCE) {
+      if (verdict.action === 'COMPRAR_FUERTE') pct = cfg.momFuertePct;
+      else if (verdict.action === 'COMPRAR') pct = cfg.momPct;
+    }
+    if (pct <= 0) continue;
+    if (now - (lastMomOpusBuyTs[name] || 0) < CONFIG.SIGNAL_COOLDOWN_MS) continue;
+    const plan = dayPlan(cfg, now);
+    if (plan.budget < 1 || minutes > plan.endMin) continue;
+    const remaining = plan.budget - await spent(date, name);
+    if (remaining < 1) continue;
+    const amount = Math.min(plan.budget * pct, remaining);
+    const trade = await execute(name, 'momop', amount, execPrice, null, now);
+    if (trade) { lastMomOpusBuyTs[name] = now; executed.push(trade); }
+  }
+  return executed;
+}
+
 // Trader: compra barato y VENDE caro en puntos clave. Mide ganancia realizada.
 //  buyPx  = precio RFQ de COMPRA (lo que pagamos)
 //  sellPx = precio RFQ de VENTA (lo que nos pagan, más bajo) — la venta se valúa aquí

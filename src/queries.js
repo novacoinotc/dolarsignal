@@ -105,7 +105,7 @@ export function recentSignals(limit = 50) {
 // Compras recientes de las estrategias destacadas (para gráfica y tabla)
 export async function recentTrades(limit = 80) {
   const trades = await q(
-    `SELECT * FROM trades WHERE reason IN ('signal','buy','sell','ai') ORDER BY ts DESC LIMIT $1`, [limit]
+    `SELECT * FROM trades WHERE reason IN ('signal','buy','sell','ai','mom','momop') ORDER BY ts DESC LIMIT $1`, [limit]
   );
   if (!trades.length) return trades;
   const ids = trades.map(t => t.id);
@@ -128,7 +128,7 @@ const ACC_KEYS = Object.keys(ACCUMULATORS);
 export async function performance() {
   const rows = await q(`
     SELECT date, strategy, SUM(mxn) AS mxn, SUM(usdt) AS usdt,
-           COUNT(CASE WHEN reason IN ('signal','buy','ai','mom') THEN 1 END) AS signal_trades
+           COUNT(CASE WHEN reason IN ('signal','buy','ai','mom','momop') THEN 1 END) AS signal_trades
     FROM trades WHERE strategy = ANY($1) GROUP BY date, strategy
   `, [ACC_KEYS]);
   // Organizar por día → estrategia

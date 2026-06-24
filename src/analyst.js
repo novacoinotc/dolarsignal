@@ -88,3 +88,26 @@ stance: COMPRAR_AHORA (está barato y con buen momento), COMPRAR_PARCIAL (compra
   const { data, usage } = await structured(CONFIG.ANALYST_MODEL, system, user, ANALYST_SCHEMA, { maxTokens: 1500, thinking: true });
   return { ...data, usage };
 }
+
+const MOM_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    action: { type: 'string', enum: ['COMPRAR_FUERTE', 'COMPRAR', 'NO_COMPRAR'] },
+    confidence: { type: 'integer' },
+    reason: { type: 'string' },
+  },
+  required: ['action', 'confidence', 'reason'],
+};
+
+// ANALYST de MOMENTUM — Opus con mentalidad de ANTICIPAR la subida (no reversión).
+export async function runMomentumAnalyst(ctx) {
+  const system = `Eres un trader de MOMENTUM de una mesa OTC que compra USDT/MXN (~$25M MXN/día). De todos modos hay que comprar el día completo, así que tu única pregunta es CUÁNDO. Tu filosofía: ANTICIPAR la subida.
+
+Si hay un catalizador que va a empujar el dólar ARRIBA (dólar fuerte global, peso presionado por Trump/política, Fed hawkish, risk-off, BTC cayendo, intervención en otros mercados, noticias macro pro-dólar) y/o el precio ya viene en tendencia alcista, conviene COMPRAR YA / TEMPRANO aunque parezca "caro" — porque al rato estará MÁS caro. NO esperes pullbacks cuando la tendencia y el catalizador son claros al alza; esperar = pagar más.
+
+Solo evita comprar fuerte (NO_COMPRAR) si ves AGOTAMIENTO o riesgo de REVERSIÓN: rally muy extendido sin catalizador que lo sostenga, catalizador que se desvanece, o un evento inminente que podría tumbar el dólar.
+
+action: COMPRAR_FUERTE (catalizador alcista claro o tendencia fuerte → carga grande ya), COMPRAR (sesgo alcista moderado → carga algo), NO_COMPRAR (sin catalizador, lateral, o riesgo de reversión → no adelantes). confidence 0-100.`;
+  const { data, usage } = await structured(CONFIG.ANALYST_MODEL, system, describeContext(ctx), MOM_SCHEMA, { maxTokens: 900, thinking: true });
+  return { ...data, usage };
+}

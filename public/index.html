@@ -128,8 +128,8 @@ const hm = ts => new Date(ts).toLocaleTimeString('es-MX',{timeZone:'America/Mexi
 const cls = n => n==null?'':n>=0?'pos':'neg';
 const cent = n => n==null?'—':(n>=0?'+':'')+n.toFixed(3)+'¢';
 const deltaCell = (o,h)=>{ const x=(o||[]).find(z=>z.horizon_min===h); return x?`<td class="${cls(x.delta_centavos)}">${x.delta_centavos>=0?'+':''}${x.delta_centavos.toFixed(2)}¢</td>`:'<td>—</td>'; };
-const COLORS={ twap:'#8b949e',bot:'#3fb950',aggressive:'#f85149',sessions:'#a371f7',friday:'#d29922',smart:'#58a6ff',trader:'#ff7b72', bot_ai:'#56d364',aggressive_ai:'#ffa198',smart_ai:'#d2a8ff', momentum:'#ff7b00' };
-const LABELS={ twap:'Pareja',bot:'Cauteloso',aggressive:'Agresivo',sessions:'Sesiones',friday:'Viernes',smart:'Inteligente', bot_ai:'Cauteloso IA',aggressive_ai:'Agresivo IA',smart_ai:'Inteligente IA', momentum:'Momentum IA' };
+const COLORS={ twap:'#8b949e',bot:'#3fb950',aggressive:'#f85149',sessions:'#a371f7',friday:'#d29922',smart:'#58a6ff',trader:'#ff7b72', bot_ai:'#56d364',aggressive_ai:'#ffa198',smart_ai:'#d2a8ff', momentum:'#ff7b00', momentum_opus:'#ff4da6' };
+const LABELS={ twap:'Pareja',bot:'Cauteloso',aggressive:'Agresivo',sessions:'Sesiones',friday:'Viernes',smart:'Inteligente', bot_ai:'Cauteloso IA',aggressive_ai:'Agresivo IA',smart_ai:'Inteligente IA', momentum:'Momentum regla', momentum_opus:'Momentum Opus' };
 
 // ===== Gráfica: TradingView Lightweight Charts (robusta, velas nativas) =====
 const chartState = { type:'candles', source:'bitso', hours:24, showRfq:true, showSpot:false };
@@ -252,13 +252,13 @@ async function refresh(){
       <div class="card"><div class="label">Z-score 60m</div><div class="value" style="color:${ind.z<-1?'var(--green)':'inherit'}">${ind.z==null?'—':ind.z.toFixed(2)}</div><div class="hint">&lt;-1.5 dip</div></div>`;
 
     const ranked=[...(perf.global||[])].sort((x,y)=>(y.centavosSaved??-1e9)-(x.centavosSaved??-1e9));
-    $('leader').querySelector('tbody').innerHTML = ranked.map((p,i)=>`<tr class="${i===0&&p.strategy!=='twap'?'rank1':''}"><td>${p.strategy==='twap'?'–':i+1}</td><td><span class="dot" style="background:${p.color||COLORS[p.strategy]}"></span>${p.label}${p.strategy&&p.strategy.endsWith('_ai')?'<span class="pill">🤖 IA</span>':''}${p.strategy==='momentum'?'<span class="pill">🚀 anticipa</span>':''}${p.strategy==='twap'?'<span class="pill">ref</span>':''}</td><td>${fmt(p.avg)}</td><td class="${cls(p.centavosSaved)} ${i===0&&p.strategy!=='twap'?'win':''}">${p.strategy==='twap'?'—':cent(p.centavosSaved)}</td><td class="big ${cls(p.savedMxn)}">${p.strategy==='twap'?'—':fmtMxn(p.savedMxn)}</td><td>${fmtUsdt(p.usdt)}</td><td>${p.signalTrades}</td></tr>`).join('') || '<tr><td colspan="7">Sin datos aún</td></tr>';
+    $('leader').querySelector('tbody').innerHTML = ranked.map((p,i)=>`<tr class="${i===0&&p.strategy!=='twap'?'rank1':''}"><td>${p.strategy==='twap'?'–':i+1}</td><td><span class="dot" style="background:${p.color||COLORS[p.strategy]}"></span>${p.label}${p.strategy&&p.strategy.endsWith('_ai')?'<span class="pill">🤖 IA</span>':''}${p.strategy==='momentum'?'<span class="pill">🚀 regla</span>':''}${p.strategy==='momentum_opus'?'<span class="pill">🧠🚀 anticipa</span>':''}${p.strategy==='twap'?'<span class="pill">ref</span>':''}</td><td>${fmt(p.avg)}</td><td class="${cls(p.centavosSaved)} ${i===0&&p.strategy!=='twap'?'win':''}">${p.strategy==='twap'?'—':cent(p.centavosSaved)}</td><td class="big ${cls(p.savedMxn)}">${p.strategy==='twap'?'—':fmtMxn(p.savedMxn)}</td><td>${fmtUsdt(p.usdt)}</td><td>${p.signalTrades}</td></tr>`).join('') || '<tr><td colspan="7">Sin datos aún</td></tr>';
 
     const tr=perf.trader||{};
     $('traderbox').innerHTML = `<div><span class="dot" style="background:${COLORS.trader}"></span><b style="color:${COLORS.trader}">Trader</b> <span class="pill">compra/vende</span></div><div><div class="lbl">Realizada</div><span class="big ${cls(tr.realizedMxn)}">${fmtMxn(tr.realizedMxn)}</span></div><div><div class="lbl">No realizada</div><span class="big ${cls(tr.unrealizedMxn)}">${fmtMxn(tr.unrealizedMxn)}</span></div><div><div class="lbl">Total</div><span class="big ${cls(tr.totalMxn)}">${fmtMxn(tr.totalMxn)}</span></div><div style="color:var(--muted);font-size:10.5px">${tr.buys||0} compras/${tr.sells||0} ventas · ${fmtUsdt(tr.openUsdt)} USDT @ ${fmt(tr.avgCost)} · vende a ${fmt(tr.sellPrice)}</div>`;
 
     // pares mecánica/IA adyacentes para comparar de un vistazo
-    const keys=['bot','bot_ai','aggressive','aggressive_ai','smart','smart_ai','momentum','sessions','friday'];
+    const keys=['bot','bot_ai','aggressive','aggressive_ai','smart','smart_ai','momentum','momentum_opus','sessions','friday'];
     $('daily').querySelector('thead').innerHTML='<tr><th>Fecha</th>'+keys.map(k=>`<th><span class="dot" style="background:${COLORS[k]}"></span>${LABELS[k]}</th>`).join('')+'</tr>';
     $('daily').querySelector('tbody').innerHTML=(perf.days||[]).map(d=>`<tr><td>${d.date}</td>${keys.map(k=>{const c=d.cells[k]?.centavos;return `<td class="${cls(c)}">${c==null?'—':cent(c)}</td>`;}).join('')}</tr>`).join('')||`<tr><td colspan="${keys.length+1}">Sin días aún</td></tr>`;
 

@@ -42,9 +42,12 @@ export const ACCUMULATORS = {
   // ── Momentum: ANTICIPA la subida. Compra fuerte cuando el precio viene subiendo
   //    (z-score positivo), hay noticia de alto impacto, o BTC se cae (risk-off → dólar↑).
   //    Lo opuesto a comprar el dip. Determinista (igual en vivo y en backtest).
-  momentum:      { label: 'Momentum IA', color: '#ff7b00', momentum: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
+  momentum:      { label: 'Momentum regla', color: '#ff7b00', momentum: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
                    momZBuy: 1.0, momZStrong: 2.0, momBuyPct: 0.08, momStrongPct: 0.20, momNews: 4.5, momBtcZ: -1.5,
                    sessionAware: false, fridayPreload: false },
+  // Momentum decidido por OPUS (anticipa la subida con criterio de IA, no con regla fija)
+  momentum_opus: { label: 'Momentum Opus', color: '#ff4da6', momentumOpus: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
+                   momPct: 0.08, momFuertePct: 0.20, sessionAware: false, fridayPreload: false },
 };
 
 // Confianza mínima de Opus para que las gemelas IA actúen sobre un veredicto

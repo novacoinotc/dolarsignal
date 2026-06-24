@@ -13,7 +13,7 @@ import { insertOutcome, priceNear } from './queries.js';
 // Compras oportunistas de cualquier estrategia (señal/compra del trader)
 const PENDING_TRADES = `
   SELECT t.id, t.ts, t.price FROM trades t
-  WHERE t.reason IN ('signal', 'buy', 'ai') AND t.ts <= $1
+  WHERE t.reason IN ('signal', 'buy', 'ai', 'mom', 'momop') AND t.ts <= $1
     AND NOT EXISTS (SELECT 1 FROM outcomes o WHERE o.kind = 'trade' AND o.ref_id = t.id AND o.horizon_min = $2)
   ORDER BY t.ts DESC LIMIT 80
 `;
