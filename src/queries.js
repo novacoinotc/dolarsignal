@@ -122,27 +122,40 @@ export function recentNews(limit = 30) {
 
 const ACC_KEYS = Object.keys(ACCUMULATORS);
 
-// Resumen GLOBAL por estrategia (precio promedio, centavos vs TWAP, ahorro total)
+// Resumen GLOBAL por estrategia. La utilidad se mide como SUMA DEL AHORRO DIARIO:
+// cada día se compara contra el TWAP de ESE día. Es la métrica honesta — no se
+// distorsiona con la tendencia de varios días ni con el día parcial en curso.
 export async function performance() {
   const rows = await q(`
-    SELECT strategy, SUM(mxn) AS mxn, SUM(usdt) AS usdt,
-           COUNT(CASE WHEN reason IN ('signal','buy','ai') THEN 1 END) AS signal_trades
-    FROM trades WHERE strategy = ANY($1) GROUP BY strategy
+    SELECT date, strategy, SUM(mxn) AS mxn, SUM(usdt) AS usdt,
+           COUNT(CASE WHEN reason IN ('signal','buy','ai','mom') THEN 1 END) AS signal_trades
+    FROM trades WHERE strategy = ANY($1) GROUP BY date, strategy
   `, [ACC_KEYS]);
-  const by = {};
-  for (const r of rows) by[r.strategy] = { mxn: Number(r.mxn), usdt: Number(r.usdt), signalTrades: Number(r.signal_trades) };
-  const twapAvg = by.twap && by.twap.usdt > 0 ? by.twap.mxn / by.twap.usdt : null;
-
+  // Organizar por día → estrategia
+  const byDate = {};
+  for (const r of rows) (byDate[r.date] ??= {})[r.strategy] = { mxn: Number(r.mxn), usdt: Number(r.usdt), st: Number(r.signal_trades) };
+  // Acumular totales y ahorro-vs-TWAP-del-día por estrategia
+  const agg = {}; for (const k of ACC_KEYS) agg[k] = { mxn: 0, usdt: 0, signalTrades: 0, savedMxn: 0 };
+  for (const d in byDate) {
+    const tw = byDate[d].twap;
+    const twAvg = tw && tw.usdt > 0 ? tw.mxn / tw.usdt : null;
+    for (const k of ACC_KEYS) {
+      const x = byDate[d][k]; if (!x) continue;
+      agg[k].mxn += x.mxn; agg[k].usdt += x.usdt; agg[k].signalTrades += x.st;
+      if (twAvg != null && x.usdt > 0) agg[k].savedMxn += (twAvg - x.mxn / x.usdt) * x.usdt;
+    }
+  }
   return ACC_KEYS.map(key => {
-    const s = by[key];
-    const avg = s && s.usdt > 0 ? s.mxn / s.usdt : null;
-    const centavosSaved = avg && twapAvg ? (twapAvg - avg) * 100 : null;
+    const s = agg[key];
+    const avg = s.usdt > 0 ? s.mxn / s.usdt : null;          // precio promedio (informativo)
+    const isTwap = key === 'twap';
+    // ¢/USDT = ahorro diario total dividido entre el volumen (promedio ponderado honesto)
+    const centavosSaved = isTwap ? 0 : (s.usdt > 0 ? (s.savedMxn / s.usdt) * 100 : null);
     return {
       strategy: key, label: ACCUMULATORS[key].label, color: ACCUMULATORS[key].color,
       avg, centavosSaved,
-      usdt: s ? s.usdt : 0, mxn: s ? s.mxn : 0,
-      signalTrades: s ? s.signalTrades : 0,
-      savedMxn: centavosSaved !== null ? (centavosSaved / 100) * (s ? s.usdt : 0) : null,
+      usdt: s.usdt, mxn: s.mxn, signalTrades: s.signalTrades,
+      savedMxn: isTwap ? null : s.savedMxn,
     };
   });
 }
