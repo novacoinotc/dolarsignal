@@ -267,55 +267,37 @@ export async function traderPnl() {
 }
 
 // ── Monitor del efecto viernes ──────────────────────────────
-// Compara el precio USDT/MXN justo antes del cierre (vie 14:30 CDMX) contra el
-// promedio del fin de semana siguiente, para medir cuánto sube por baja liquidez.
+// Compara el precio USDT/MXN del cierre del viernes (~14h CDMX) contra el promedio
+// del fin de semana de esa MISMA semana ISO. Todo agregado en SQL (rápido) — antes
+// cargaba 240k+ ticks a memoria y tumbaba el endpoint.
 export async function fridayEffect(weeks = 8) {
-  const ticks = await q(
-    `SELECT ts, price FROM ticks WHERE source = 'bitso' AND ts >= $1 ORDER BY ts`,
-    [Date.now() - weeks * 7 * 86_400_000]
-  );
-  if (!ticks.length) return [];
   const tz = CONFIG.TIMEZONE;
-  const parts = ts => {
-    const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false })
-      .formatToParts(new Date(ts));
-    const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(p.find(x => x.type === 'weekday').value);
-    const min = (Number(p.find(x => x.type === 'hour').value) % 24) * 60 + Number(p.find(x => x.type === 'minute').value);
-    const date = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(ts));
-    return { dow, min, date };
-  };
-  // Precio de cierre de cada viernes (~14:30) y promedio del fin de semana
-  const fridayClose = new Map();   // weekKey -> {price, date}
-  const weekend = new Map();       // weekKey -> {sum, n}
-  for (const t of ticks) {
-    const { dow, min, date } = parts(t.ts);
-    if (dow === 5 && min >= 14 * 60 && min <= 15 * 60) {
-      fridayClose.set(date, { price: Number(t.price), date });
-    }
-    if (dow === 6 || dow === 0) {
-      const wk = weekendKey(t.ts, tz);
-      const w = weekend.get(wk) || { sum: 0, n: 0 };
-      w.sum += Number(t.price); w.n++; weekend.set(wk, w);
-    }
-  }
-  const out = [];
-  for (const [date, fc] of fridayClose) {
-    const wk = weekendKey(Date.parse(date + 'T20:30:00Z'), tz);
-    const w = weekend.get(wk);
-    if (!w) continue;
-    const wkAvg = w.sum / w.n;
-    out.push({ friday: date, closePrice: fc.price, weekendAvg: wkAvg, deltaCentavos: (wkAvg - fc.price) * 100 });
-  }
-  return out.slice(-weeks);
-}
-
-function weekendKey(ts, tz) {
-  // Clave del fin de semana = fecha del sábado (aprox por desplazamiento)
-  const d = new Date(ts);
-  const wd = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(d);
-  const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(wd);
-  const satTs = ts - ((dow === 0 ? 1 : 0)) * 86_400_000;
-  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(satTs));
+  const rows = await q(`
+    WITH cdmx AS (
+      SELECT price, to_timestamp(ts/1000) AT TIME ZONE $2 AS lt
+      FROM ticks WHERE source = 'bitso' AND ts >= $1
+    ),
+    fri AS (
+      SELECT to_char(lt, 'IYYY-IW') AS wk,
+             to_char(lt, 'YYYY-MM-DD') AS friday,
+             (array_agg(price ORDER BY lt DESC))[1] AS close_price
+      FROM cdmx WHERE EXTRACT(ISODOW FROM lt) = 5 AND EXTRACT(HOUR FROM lt) = 14
+      GROUP BY wk, friday
+    ),
+    wknd AS (
+      SELECT to_char(lt, 'IYYY-IW') AS wk, AVG(price)::float8 AS wk_avg
+      FROM cdmx WHERE EXTRACT(ISODOW FROM lt) IN (6, 7)
+      GROUP BY wk
+    )
+    SELECT fri.friday, fri.close_price::float8 AS close_price, wknd.wk_avg
+    FROM fri JOIN wknd USING (wk) ORDER BY fri.friday DESC LIMIT $3
+  `, [Date.now() - weeks * 7 * 86_400_000, tz, weeks]);
+  return rows.reverse().map(r => ({
+    friday: r.friday,
+    closePrice: Number(r.close_price),
+    weekendAvg: Number(r.wk_avg),
+    deltaCentavos: (Number(r.wk_avg) - Number(r.close_price)) * 100,
+  }));
 }
 
 // ── Agente de IA ────────────────────────────────────────────
