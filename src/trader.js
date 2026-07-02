@@ -35,7 +35,7 @@ export async function onSlotCheck(now, price) {
 
   for (const [name, cfg] of Object.entries(ACCUMULATORS)) {
     const plan = dayPlan(cfg, now);
-    if (plan.budget < 1 || minutes > plan.endMin) continue;   // sin presupuesto o ventana cerrada
+    if (plan.budget < 1 || minutes > plan.endMin || minutes < (plan.startMin || 0)) continue; // fuera de presupuesto o de ventana
     const remaining = plan.budget - await spent(date, name);
     if (remaining < 1) continue;
     const slotsLeft = Math.max(1, Math.ceil((plan.endMin - minutes) / CONFIG.TWAP_SLOT_MINUTES));
@@ -70,7 +70,7 @@ export async function onSignal(signal, execPrice) {
     if (pct <= 0) continue;
     if (now - (lastSignalBuyTs[name] || 0) < CONFIG.SIGNAL_COOLDOWN_MS) continue;
     const plan = dayPlan(cfg, now);
-    if (plan.budget < 1 || minutes > plan.endMin) continue;
+    if (plan.budget < 1 || minutes > plan.endMin || minutes < (plan.startMin || 0)) continue;
     const remaining = plan.budget - await spent(date, name);
     if (remaining < 1) continue;
     const amount = Math.min(plan.budget * pct, remaining);
@@ -101,7 +101,7 @@ export async function onVerdict(verdict, execPrice) {
     if (pct <= 0) continue;
     if (now - (lastAiBuyTs[name] || 0) < CONFIG.SIGNAL_COOLDOWN_MS) continue;
     const plan = dayPlan(cfg, now);
-    if (plan.budget < 1 || minutes > plan.endMin) continue;
+    if (plan.budget < 1 || minutes > plan.endMin || minutes < (plan.startMin || 0)) continue;
     const remaining = plan.budget - await spent(date, name);
     if (remaining < 1) continue;
     const amount = Math.min(plan.budget * pct, remaining);
@@ -128,7 +128,7 @@ export async function onMomentum(now, z, btcZ, newsCatalyst, execPrice) {
     if (pct <= 0) continue;
     if (now - (lastMomBuyTs[name] || 0) < CONFIG.SIGNAL_COOLDOWN_MS) continue;
     const plan = dayPlan(cfg, now);
-    if (plan.budget < 1 || minutes > plan.endMin) continue;
+    if (plan.budget < 1 || minutes > plan.endMin || minutes < (plan.startMin || 0)) continue;
     const remaining = plan.budget - await spent(date, name);
     if (remaining < 1) continue;
     const amount = Math.min(plan.budget * pct, remaining);
@@ -158,7 +158,7 @@ export async function onMomentumOpus(verdict, execPrice) {
     if (pct <= 0) continue;
     if (now - (lastMomOpusBuyTs[name] || 0) < CONFIG.SIGNAL_COOLDOWN_MS) continue;
     const plan = dayPlan(cfg, now);
-    if (plan.budget < 1 || minutes > plan.endMin) continue;
+    if (plan.budget < 1 || minutes > plan.endMin || minutes < (plan.startMin || 0)) continue;
     const remaining = plan.budget - await spent(date, name);
     if (remaining < 1) continue;
     const amount = Math.min(plan.budget * pct, remaining);

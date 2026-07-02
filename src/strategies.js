@@ -48,6 +48,11 @@ export const ACCUMULATORS = {
   // Momentum decidido por OPUS (anticipa la subida con criterio de IA, no con regla fija)
   momentum_opus: { label: 'Momentum Opus', color: '#ff4da6', momentumOpus: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
                    momPct: 0.08, momFuertePct: 0.20, sessionAware: false, fridayPreload: false },
+  // Ventana MATUTINA: compra todo entre 7am-12pm CDMX (backtest: única ventana robusta
+  // en ambas mitades del periodo, con mejor peor-día que la madrugada) + sizing de Opus.
+  morning_ai:    { label: 'Mañana IA', color: '#2dd4bf', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
+                   aiPartialPct: 0.08, aiNowPct: 0.20, windowStart: 7 * 60, windowEnd: 12 * 60,
+                   sessionAware: false, fridayPreload: false },
 };
 
 // Confianza mínima de Opus para que las gemelas IA actúen sobre un veredicto
@@ -79,15 +84,19 @@ export function cdmxMinutes(now) {
   return h * 60 + m;
 }
 
-// Plan del día para una estrategia: cuánto comprar y hasta qué minuto.
-//  Las de fridayPreload: vie = $20M + finde; sáb/dom = $0 (ya precargado); resto = $20M.
+// Plan del día para una estrategia: cuánto comprar y en qué ventana [startMin, endMin].
+//  Las de fridayPreload: vie = presupuesto + finde; sáb/dom = $0 (ya precargado).
+//  Las de ventana (windowStart/windowEnd): solo compran dentro de su ventana horaria.
 export function dayPlan(cfg, now) {
   if (cfg.fridayPreload) {
     const dow = cdmxDow(now);
-    if (dow === 5) return { budget: BASE_DAILY * (1 + WEEKEND_DAYS_SOLD), endMin: FRIDAY_CUTOFF_MIN };
-    if (dow === 6 || dow === 0) return { budget: 0, endMin: 1440 };
+    if (dow === 5) return { budget: BASE_DAILY * (1 + WEEKEND_DAYS_SOLD), startMin: 0, endMin: FRIDAY_CUTOFF_MIN };
+    if (dow === 6 || dow === 0) return { budget: 0, startMin: 0, endMin: 1440 };
   }
-  return { budget: BASE_DAILY, endMin: 1440 };
+  if (cfg.windowStart != null) {
+    return { budget: BASE_DAILY, startMin: cfg.windowStart, endMin: cfg.windowEnd };
+  }
+  return { budget: BASE_DAILY, startMin: 0, endMin: 1440 };
 }
 
 export function sessionWeight(cfg, minutes) {
