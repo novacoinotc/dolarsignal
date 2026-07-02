@@ -53,6 +53,12 @@ export const ACCUMULATORS = {
   morning_ai:    { label: 'Mañana IA', color: '#2dd4bf', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
                    aiPartialPct: 0.08, aiNowPct: 0.20, windowStart: 7 * 60, windowEnd: 12 * 60,
                    sessionAware: false, fridayPreload: false },
+  // PRO: el destilado del backtest unificado — ventana matutina 7-12h + sizing por el
+  // cerebro MOMENTUM de Opus (el único con discriminación real; compra menos a ciegas
+  // que el analista). La variante con ventana nocturna salió PEOR: se excluye.
+  pro_ai:        { label: 'Pro IA', color: '#eab308', momentumOpus: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
+                   momPct: 0.06, momFuertePct: 0.15, windowStart: 7 * 60, windowEnd: 12 * 60,
+                   sessionAware: false, fridayPreload: false },
 };
 
 // Confianza mínima de Opus para que las gemelas IA actúen sobre un veredicto
