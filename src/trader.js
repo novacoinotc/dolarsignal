@@ -5,7 +5,7 @@
 import { CONFIG, tradingDate } from './config.js';
 import { insertTrade, spent, traderPosition } from './queries.js';
 import {
-  ACCUMULATORS, TRADER, AI_MIN_CONFIDENCE, dayPlan, sessionWeight, cdmxMinutes,
+  ACCUMULATORS, TRADER, HYBRID, AI_MIN_CONFIDENCE, dayPlan, sessionWeight, cdmxMinutes,
 } from './strategies.js';
 
 const CATCHUP_SLOTS = 4;           // slots finales donde se acelera al 100%
@@ -34,6 +34,7 @@ export async function onSlotCheck(now, price) {
   const executed = [];
 
   for (const [name, cfg] of Object.entries(ACCUMULATORS)) {
+    if (cfg.hybrid) continue;   // el Híbrido maneja su propia lógica horaria (onHybridHour)
     const plan = dayPlan(cfg, now);
     if (plan.budget < 1 || minutes > plan.endMin || minutes < (plan.startMin || 0)) continue; // fuera de presupuesto o de ventana
     const remaining = plan.budget - await spent(date, name);
@@ -166,6 +167,42 @@ export async function onMomentumOpus(verdict, execPrice) {
     if (trade) { lastMomOpusBuyTs[name] = now; executed.push(trade); }
   }
   return executed;
+}
+
+// HÍBRIDO — la estrategia de tesorería calibrada al negocio. Corre UNA VEZ POR HORA
+// (cadencia del backtest de 2 años que la validó). z = z-score del precio actual vs
+// las últimas 24 horas. Ejecuta al precio RFQ real. reason='dip' para compras
+// oportunistas (alertables), 'slot' para el ritmo/recta final.
+let lastHybridHourKey = null;
+export async function onHybridHour(now, z, execPrice) {
+  if (!execPrice) return null;
+  const minutes = cdmxMinutes(now);
+  const hour = Math.floor(minutes / 60);
+  const key = `${tradingDate(now)}:${hour}`;
+  if (key === lastHybridHourKey) return null;    // una decisión por hora
+  lastHybridHourKey = key;
+
+  const date = tradingDate(now);
+  const budget = CONFIG.DAILY_BUDGET_MXN;
+  const remaining = budget - await spent(date, 'hybrid');
+  if (remaining < 1) return null;
+
+  let amt = 0, reason = 'slot';
+  if (hour < HYBRID.nightEnd) {
+    // madrugada: SOLO dips fuertes ("amanecer con USDT barato")
+    if (z != null && z <= HYBRID.zStrong) { amt = Math.min(budget * HYBRID.strongPct, remaining); reason = 'dip'; }
+  } else if (hour < HYBRID.endHour) {
+    const hoursLeft = HYBRID.endHour - hour;
+    if (hoursLeft <= 1) amt = remaining;                                   // última hora: completa
+    else if (hoursLeft <= HYBRID.finalHours) amt = remaining / hoursLeft;  // recta final pareja
+    else if (z != null && z <= HYBRID.zStrong) { amt = Math.min(budget * HYBRID.strongPct, remaining); reason = 'dip'; }
+    else if (z != null && z <= HYBRID.zDip)    { amt = Math.min(budget * HYBRID.dipPct, remaining); reason = 'dip'; }
+    else if (z != null && z >= HYBRID.zDefer)  amt = 0;                    // subiendo: difiere
+    else amt = Math.min(remaining, remaining / hoursLeft * HYBRID.pace);   // neutro: ritmo lento
+  }
+  // 22-24h: nada (ya completó a las 10pm)
+  if (amt < 1) return null;
+  return execute('hybrid', reason, amt, execPrice, null, now);
 }
 
 // Trader: compra barato y VENDE caro en puntos clave. Mide ganancia realizada.

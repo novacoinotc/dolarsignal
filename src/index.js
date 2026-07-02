@@ -8,11 +8,12 @@ import { fetchBtc } from './sources/btc.js';
 import { fetchRfqBuy, fetchRfqSell } from './sources/rfq.js';
 import { fetchNews } from './sources/news.js';
 import { evaluateSignal, indicatorSnapshot } from './signals.js';
-import { onSignal, onSlotCheck, onTraderTick, onVerdict, onMomentum, onMomentumOpus } from './trader.js';
+import { onSignal, onSlotCheck, onTraderTick, onVerdict, onMomentum, onMomentumOpus, onHybridHour } from './trader.js';
 import { evaluateOutcomes } from './outcomes.js';
 import { alertSignal, alertNews, sendAlert } from './alerts.js';
 import { allEvents, upcomingEvents } from './calendar.js';
-import { buildAnalysisContext, insertAnalysis, latestAnalysis } from './queries.js';
+import { buildAnalysisContext, insertAnalysis, latestAnalysis, hourlyCloses } from './queries.js';
+import { zscore } from './indicators.js';
 import { runScout, runAnalyst, runMomentumAnalyst, aiEnabled } from './analyst.js';
 import { startServer } from './server.js';
 
@@ -133,6 +134,20 @@ async function minuteTick() {
     const trades = await onSlotCheck(Date.now(), buyPrice());   // slots al precio RFQ real
     if (trades.length) {
       console.log(`🕐 [${cdmxTime()}] Slots: ${trades.length} estrategias compraron @ ${trades[0].price.toFixed(4)} (RFQ)`);
+    }
+    // HÍBRIDO (tesorería): decisión una vez por hora con z de 24h (receta del backtest)
+    const hc = await hourlyCloses('bitso', 26);
+    if (hc.length >= 13) {
+      const closes = hc.map(r => Number(r.p));
+      const z = zscore(closes.slice(0, -1).slice(-24), closes.at(-1));
+      const ht = await onHybridHour(Date.now(), z, buyPrice());
+      if (ht) {
+        console.log(`🌊 [${cdmxTime()}] Híbrido ${ht.reason === 'dip' ? 'DIP' : 'ritmo'}: $${Math.round(ht.mxn).toLocaleString('es-MX')} @ ${ht.price.toFixed(4)} (z ${z.toFixed(2)})`);
+        if (ht.reason === 'dip') {
+          await sendAlert('🌊 Híbrido compró un dip',
+            `$${Math.round(ht.mxn).toLocaleString('es-MX')} MXN @ ${ht.price.toFixed(4)} · z 24h: ${z.toFixed(2)}\nEl precio cayó vs su promedio de 24h — compra oportunista para tesorería.`);
+        }
+      }
     }
     await evaluateOutcomes();
   } catch (err) {

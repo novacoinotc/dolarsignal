@@ -63,6 +63,27 @@ export function minuteCloses(source, sinceTs) {
   );
 }
 
+// Cierres HORARIOS (para el z-score del Híbrido: precio actual vs 24h previas)
+export function hourlyCloses(source, hours = 26) {
+  return q(
+    `SELECT (ts/3600000)*3600000 AS h, (array_agg(price ORDER BY ts DESC))[1] AS p
+     FROM ticks WHERE source = $1 AND ts > $2 GROUP BY h ORDER BY h`,
+    [source, Date.now() - hours * 3600_000]
+  );
+}
+
+// Tesorería del día (vista para operadores): costo promedio LOGRADO por el Híbrido hoy
+export async function treasuryToday(now = Date.now()) {
+  const date = tradingDate(now);
+  const r = await q(
+    `SELECT COALESCE(SUM(mxn),0) mxn, COALESCE(SUM(usdt),0) usdt,
+            COUNT(CASE WHEN reason='dip' THEN 1 END) dips
+     FROM trades WHERE strategy = 'hybrid' AND date = $1`, [date]
+  );
+  const mxn = Number(r[0].mxn), usdt = Number(r[0].usdt);
+  return { date, mxn, usdt, avg: usdt > 0 ? mxn / usdt : null, dips: Number(r[0].dips), budget: CONFIG.DAILY_BUDGET_MXN };
+}
+
 // Velas OHLC por intervalo (minutos) para una fuente — para la gráfica de velas
 export function ohlc(source, intervalMin, sinceTs) {
   const ms = intervalMin * 60_000;
@@ -105,7 +126,7 @@ export function recentSignals(limit = 50) {
 // Compras recientes de las estrategias destacadas (para gráfica y tabla)
 export async function recentTrades(limit = 80) {
   const trades = await q(
-    `SELECT * FROM trades WHERE reason IN ('signal','buy','sell','ai','mom','momop') ORDER BY ts DESC LIMIT $1`, [limit]
+    `SELECT * FROM trades WHERE reason IN ('signal','buy','sell','ai','mom','momop','dip') ORDER BY ts DESC LIMIT $1`, [limit]
   );
   if (!trades.length) return trades;
   const ids = trades.map(t => t.id);
@@ -128,7 +149,7 @@ const ACC_KEYS = Object.keys(ACCUMULATORS);
 export async function performance() {
   const rows = await q(`
     SELECT date, strategy, SUM(mxn) AS mxn, SUM(usdt) AS usdt,
-           COUNT(CASE WHEN reason IN ('signal','buy','ai','mom','momop') THEN 1 END) AS signal_trades
+           COUNT(CASE WHEN reason IN ('signal','buy','ai','mom','momop','dip') THEN 1 END) AS signal_trades
     FROM trades WHERE strategy = ANY($1) GROUP BY date, strategy
   `, [ACC_KEYS]);
   // Organizar por día → estrategia

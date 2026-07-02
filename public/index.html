@@ -63,6 +63,11 @@
 
 <div class="banner" id="blackout"></div>
 
+<div class="panel" id="treasury-panel" style="display:none;border-color:#0e7490;background:#07161c">
+  <h2 style="color:#67e8f9">💼 Tesorería — costo promedio del día (Híbrido) <span class="pill">para operadores</span></h2>
+  <div id="treasury-body"></div>
+</div>
+
 <div class="panel" id="ai-panel" style="display:none;border-color:#8957e5;background:#1a1226">
   <h2 style="color:#d2a8ff">🤖 Agente IA — Opus 4.8 <span class="pill" id="ai-when"></span></h2>
   <div id="ai-body"></div>
@@ -128,8 +133,8 @@ const hm = ts => new Date(ts).toLocaleTimeString('es-MX',{timeZone:'America/Mexi
 const cls = n => n==null?'':n>=0?'pos':'neg';
 const cent = n => n==null?'—':(n>=0?'+':'')+n.toFixed(3)+'¢';
 const deltaCell = (o,h)=>{ const x=(o||[]).find(z=>z.horizon_min===h); return x?`<td class="${cls(x.delta_centavos)}">${x.delta_centavos>=0?'+':''}${x.delta_centavos.toFixed(2)}¢</td>`:'<td>—</td>'; };
-const COLORS={ twap:'#8b949e',bot:'#3fb950',aggressive:'#f85149',sessions:'#a371f7',friday:'#d29922',smart:'#58a6ff',trader:'#ff7b72', bot_ai:'#56d364',aggressive_ai:'#ffa198',smart_ai:'#d2a8ff', momentum:'#ff7b00', momentum_opus:'#ff4da6', morning_ai:'#2dd4bf', pro_ai:'#eab308' };
-const LABELS={ twap:'Pareja',bot:'Cauteloso',aggressive:'Agresivo',sessions:'Sesiones',friday:'Viernes',smart:'Inteligente', bot_ai:'Cauteloso IA',aggressive_ai:'Agresivo IA',smart_ai:'Inteligente IA', momentum:'Momentum regla', momentum_opus:'Momentum Opus', morning_ai:'Mañana IA', pro_ai:'Pro IA' };
+const COLORS={ twap:'#8b949e',bot:'#3fb950',aggressive:'#f85149',sessions:'#a371f7',friday:'#d29922',smart:'#58a6ff',trader:'#ff7b72', bot_ai:'#56d364',aggressive_ai:'#ffa198',smart_ai:'#d2a8ff', momentum:'#ff7b00', momentum_opus:'#ff4da6', morning_ai:'#2dd4bf', pro_ai:'#eab308', hybrid:'#22d3ee' };
+const LABELS={ twap:'Pareja',bot:'Cauteloso',aggressive:'Agresivo',sessions:'Sesiones',friday:'Viernes',smart:'Inteligente', bot_ai:'Cauteloso IA',aggressive_ai:'Agresivo IA',smart_ai:'Inteligente IA', momentum:'Momentum regla', momentum_opus:'Momentum Opus', morning_ai:'Mañana IA', pro_ai:'Pro IA', hybrid:'Híbrido' };
 
 // ===== Gráfica: TradingView Lightweight Charts (robusta, velas nativas) =====
 const chartState = { type:'candles', source:'bitso', hours:24, showRfq:true, showSpot:false };
@@ -232,6 +237,23 @@ async function refresh(){
     $('blackout').style.display = state.blackout?'block':'none';
     if(state.blackout) $('blackout').textContent='⛔ VENTANA DE RIESGO: '+state.blackout+' — compras por señal bloqueadas';
 
+    // Tesorería: costo promedio logrado HOY vs el spot del momento (vista de operadores)
+    const tre = state.treasury;
+    if(tre && tre.usdt > 0 && state.rfq){
+      const spotNow = state.rfq.price;
+      const diff = (spotNow - tre.avg) * 100;   // + = nuestro USDT está más barato que comprarlo ahorita
+      const pct = Math.min(100, tre.mxn / tre.budget * 100);
+      $('treasury-panel').style.display='block';
+      $('treasury-body').innerHTML = `
+        <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:baseline">
+          <div><div class="lbl" style="color:var(--muted);font-size:10px">NUESTRO COSTO PROM. HOY</div><span style="font-size:22px;font-weight:700">${fmt(tre.avg)}</span></div>
+          <div><div class="lbl" style="color:var(--muted);font-size:10px">RFQ SPOT AHORA</div><span style="font-size:22px;font-weight:700">${fmt(spotNow)}</span></div>
+          <div><div class="lbl" style="color:var(--muted);font-size:10px">VENTAJA vs COMPRAR AHORITA</div><span style="font-size:22px;font-weight:700" class="${cls(diff)}">${diff>=0?'+':''}${diff.toFixed(2)}¢</span></div>
+          <div style="color:var(--muted);font-size:11px">${fmtUsdt(tre.usdt)} USDT comprados (${pct.toFixed(0)}% del día) · ${tre.dips} compras en dip 🌊</div>
+        </div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:5px">${diff>=0?'✅ El USDT en tesorería costó MÁS BARATO que el spot actual — cada venta de los operadores lleva ese margen extra.':'⏳ El spot bajó respecto a nuestro promedio — las próximas compras del día promediarán hacia abajo.'}</div>`;
+    } else { $('treasury-panel').style.display='none'; }
+
     const a = state.analyst;
     if(a){
       const S={ COMPRAR_AHORA:{t:'🟢 COMPRAR AHORA',c:'var(--green)'}, COMPRAR_PARCIAL:{t:'🟡 COMPRAR PARCIAL',c:'var(--yellow)'}, ESPERAR:{t:'⏸️ ESPERAR',c:'var(--blue)'}, EVITAR:{t:'🔴 EVITAR',c:'var(--red)'} };
@@ -258,7 +280,7 @@ async function refresh(){
     $('traderbox').innerHTML = `<div><span class="dot" style="background:${COLORS.trader}"></span><b style="color:${COLORS.trader}">Trader</b> <span class="pill">compra/vende</span></div><div><div class="lbl">Realizada</div><span class="big ${cls(tr.realizedMxn)}">${fmtMxn(tr.realizedMxn)}</span></div><div><div class="lbl">No realizada</div><span class="big ${cls(tr.unrealizedMxn)}">${fmtMxn(tr.unrealizedMxn)}</span></div><div><div class="lbl">Total</div><span class="big ${cls(tr.totalMxn)}">${fmtMxn(tr.totalMxn)}</span></div><div style="color:var(--muted);font-size:10.5px">${tr.buys||0} compras/${tr.sells||0} ventas · ${fmtUsdt(tr.openUsdt)} USDT @ ${fmt(tr.avgCost)} · vende a ${fmt(tr.sellPrice)}</div>`;
 
     // pares mecánica/IA adyacentes para comparar de un vistazo
-    const keys=['bot','bot_ai','aggressive','aggressive_ai','smart','smart_ai','momentum','momentum_opus','morning_ai','pro_ai','sessions','friday'];
+    const keys=['bot','bot_ai','aggressive','aggressive_ai','smart','smart_ai','hybrid','momentum','momentum_opus','morning_ai','pro_ai','sessions','friday'];
     $('daily').querySelector('thead').innerHTML='<tr><th>Fecha</th>'+keys.map(k=>`<th><span class="dot" style="background:${COLORS[k]}"></span>${LABELS[k]}</th>`).join('')+'</tr>';
     $('daily').querySelector('tbody').innerHTML=(perf.days||[]).map(d=>`<tr><td>${d.date}</td>${keys.map(k=>{const c=d.cells[k]?.centavos;return `<td class="${cls(c)}">${c==null?'—':cent(c)}</td>`;}).join('')}</tr>`).join('')||`<tr><td colspan="${keys.length+1}">Sin días aún</td></tr>`;
 
@@ -272,7 +294,7 @@ async function refresh(){
 
     $('signals').innerHTML=(signals||[]).slice(0,25).map(s=>`<div class="feed-item"><span class="tier tier-${s.tier}">${s.tier}</span> <b>${fmt(s.price)}</b> · ${Number(s.score).toFixed(1)} <span class="when">· ${when(s.ts)}</span><ul>${(s.reasons||[]).map(r=>`<li>${r}</li>`).join('')}</ul></div>`).join('')||'<div class="feed-item">Sin señales aún (calienta ~20 min)</div>';
 
-    $('trades').querySelector('tbody').innerHTML=(trades||[]).map(t=>`<tr><td>${hm(t.ts)}</td><td><span class="dot" style="background:${COLORS[t.strategy]||'#8b949e'}"></span>${LABELS[t.strategy]||t.strategy}</td><td>${t.reason==='sell'?'🔴v':t.reason==='ai'?'🤖':t.reason==='buy'?'🟢c':'🟢s'}</td><td>${fmtMxn(t.mxn)}</td><td>${fmt(t.price)}</td>${deltaCell(t.outcomes,60)}</tr>`).join('')||'<tr><td colspan="6">Sin operaciones aún</td></tr>';
+    $('trades').querySelector('tbody').innerHTML=(trades||[]).map(t=>`<tr><td>${hm(t.ts)}</td><td><span class="dot" style="background:${COLORS[t.strategy]||'#8b949e'}"></span>${LABELS[t.strategy]||t.strategy}</td><td>${t.reason==='sell'?'🔴v':t.reason==='dip'?'🌊':t.reason==='ai'?'🤖':t.reason==='buy'?'🟢c':'🟢s'}</td><td>${fmtMxn(t.mxn)}</td><td>${fmt(t.price)}</td>${deltaCell(t.outcomes,60)}</tr>`).join('')||'<tr><td colspan="6">Sin operaciones aún</td></tr>';
 
     $('news').innerHTML=(news||[]).map(n=>`<div class="feed-item"><b style="color:${n.score>=4?'var(--yellow)':'inherit'}">[${Number(n.score).toFixed(1)}]</b> ${n.link?`<a href="${n.link}" target="_blank">${n.title}</a>`:n.title} <span class="when">· ${n.source} · ${when(n.ts)}</span></div>`).join('')||'<div class="feed-item">Sin noticias aún</div>';
   }catch(err){ console.error(err); }

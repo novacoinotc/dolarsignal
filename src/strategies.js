@@ -59,6 +59,22 @@ export const ACCUMULATORS = {
   pro_ai:        { label: 'Pro IA', color: '#eab308', momentumOpus: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
                    momPct: 0.06, momFuertePct: 0.15, windowStart: 7 * 60, windowEnd: 12 * 60,
                    sessionAware: false, fridayPreload: false },
+  // HÍBRIDO — la receta ganadora del backtest de 2 años CALIBRADO AL NEGOCIO
+  // (vs refondeo real de operadores 8-22h: +0.176¢/día, 57% días, casi neutro al régimen):
+  // dips por z horario dentro de 8am-10pm (z<=-1→10%, z<=-2→20%), madrugada SOLO dips
+  // fuertes (z<=-2→20%), diferir cuando sube (z>=+1), completar al cierre 10pm.
+  // Maneja su propia lógica horaria (onHybridHour); excluida de los slots genéricos.
+  hybrid:        { label: 'Híbrido', color: '#22d3ee', hybrid: true, slotPace: 0, signalBuyPct: 0, strongBuyPct: 0,
+                   sessionAware: false, fridayPreload: false },
+};
+
+// Parámetros del Híbrido (espejo exacto del backtest business-2y.js)
+export const HYBRID = {
+  zStrong: -2, zDip: -1, zDefer: 1,
+  strongPct: 0.20, dipPct: 0.10, pace: 0.4,
+  nightEnd: 8,      // 00-08h: solo dips fuertes
+  endHour: 22,      // completa el presupuesto a las 10pm (cierre de operación)
+  finalHours: 3,    // recta final: ritmo parejo garantiza completar
 };
 
 // Confianza mínima de Opus para que las gemelas IA actúen sobre un veredicto
