@@ -15,6 +15,7 @@ import { allEvents, upcomingEvents } from './calendar.js';
 import { buildAnalysisContext, insertAnalysis, latestAnalysis, hourlyCloses, prevDayChange } from './queries.js';
 import { zscore } from './indicators.js';
 import { runScout, runAnalyst, runMomentumAnalyst, aiEnabled } from './analyst.js';
+import { initExecutor } from './executor.js';
 import { startServer } from './server.js';
 
 const NEWS_ALERT_THRESHOLD = 4; // score mínimo para alertar una noticia
@@ -214,6 +215,8 @@ async function main() {
 
   await initSchema();
   console.log('   Base de datos lista (Postgres)');
+
+  initExecutor({ publicPrice: () => lastBitsoPrice, alert: sendAlert });
 
   console.log(`   Calendario económico: ${allEvents().length} eventos cargados`);
   const next = upcomingEvents()[0];

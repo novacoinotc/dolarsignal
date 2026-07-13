@@ -4,6 +4,7 @@
 
 import { CONFIG, tradingDate } from './config.js';
 import { insertTrade, spent, traderPosition } from './queries.js';
+import { onPaperTrade } from './executor.js';
 import {
   ACCUMULATORS, TRADER, HYBRID, TESORERO, AI_MIN_CONFIDENCE, dayPlan, sessionWeight, cdmxMinutes,
 } from './strategies.js';
@@ -18,7 +19,9 @@ async function execute(strategy, reason, mxn, price, signalId = null, now = Date
   if (mxn < 1) return null;
   const usdt = mxn / price;
   await insertTrade({ ts: now, date: tradingDate(now), strategy, reason, mxn, price, usdt, signalId });
-  return { strategy, reason, mxn, price, usdt };
+  const t = { strategy, reason, mxn, price, usdt };
+  onPaperTrade(t);   // espejo real (solo actúa si EXEC_MODE≠off y es la estrategia activa del día)
+  return t;
 }
 
 // Cada minuto: slots de compra de relleno (cada 30 min) para las acumuladoras.

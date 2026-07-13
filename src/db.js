@@ -88,5 +88,23 @@ export async function initSchema() {
       payload JSONB NOT NULL         -- objeto completo (stance, confidence, reasoning, etc.)
     );
     CREATE INDEX IF NOT EXISTS idx_analysis ON analysis (kind, ts);
+
+    -- EJECUCIÓN REAL (tesorería): auditoría de cada conversión real o de ensayo (dry-run).
+    -- Toda compra real que mueva dinero queda aquí con su quote_id y conversion_id de Bitso.
+    CREATE TABLE IF NOT EXISTS real_trades (
+      id BIGSERIAL PRIMARY KEY,
+      ts BIGINT NOT NULL,
+      date TEXT NOT NULL,            -- fecha de operación CDMX
+      mode TEXT NOT NULL,            -- 'dry' (ensayo, no ejecuta) | 'live' (dinero real)
+      strategy TEXT NOT NULL,        -- estrategia que originó la compra (ej. 'tesorero')
+      reason TEXT NOT NULL,          -- 'dip' | 'slot'
+      mxn DOUBLE PRECISION NOT NULL,
+      price DOUBLE PRECISION NOT NULL,
+      usdt DOUBLE PRECISION NOT NULL,
+      quote_id TEXT,
+      conversion_id TEXT,
+      status TEXT NOT NULL           -- 'DRY' | 'COMPLETED' | 'FAILED' | 'REJECTED_<motivo>'
+    );
+    CREATE INDEX IF NOT EXISTS idx_real_trades ON real_trades (date);
   `);
 }

@@ -69,6 +69,13 @@ export const CONFIG = {
   RFQ_QUOTE_USDT: Number(process.env.RFQ_QUOTE_USDT || 5_000),  // referencia de venta (USDT)
   RFQ_POLL_MS: Number(process.env.RFQ_POLL_MS || 30_000),       // cotiza seguido: es el precio de ejecución del paper trading
 
+  // ── EJECUCIÓN REAL (tesorería) — la única sección que puede mover dinero ──
+  //  EXEC_MODE: 'off' = apagado (kill-switch) | 'dry' = cotiza pero NO compra | 'live' = compra REAL
+  EXEC_MODE: (process.env.EXEC_MODE || 'off').toLowerCase(),
+  EXEC_DAILY_CAP_MXN: Number(process.env.EXEC_DAILY_CAP_MXN || 500_000),   // tope diario duro
+  EXEC_MAX_PREMIUM_CENT: Number(process.env.EXEC_MAX_PREMIUM_CENT || 6),   // rechaza si prima RFQ > 6¢ vs público
+  EXEC_MIN_MXN: Number(process.env.EXEC_MIN_MXN || 5_000),                 // ignora compras espejo menores a esto
+
   // ── Agente de IA (scout Haiku + analista Opus) ────────────
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
   SCOUT_MODEL: process.env.SCOUT_MODEL || 'claude-haiku-4-5',   // "el chismoso": revisa todo cada minuto, barato

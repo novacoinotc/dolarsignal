@@ -90,6 +90,25 @@ export async function prevDayChange(now = Date.now()) {
   return chg == null ? null : Number(chg);
 }
 
+// ── EJECUCIÓN REAL: auditoría y tope diario ──
+export function insertRealTrade(r) {
+  return q(
+    `INSERT INTO real_trades (ts, date, mode, strategy, reason, mxn, price, usdt, quote_id, conversion_id, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [r.ts, r.date, r.mode, r.strategy, r.reason, r.mxn, r.price, r.usdt, r.quoteId, r.conversionId, r.status]
+  );
+}
+
+// Gastado REAL hoy (solo conversiones ejecutadas o en vuelo; excluye rechazos/fallas/ensayos)
+export async function realSpent(date) {
+  const rows = await q(
+    `SELECT COALESCE(SUM(mxn),0) s FROM real_trades
+     WHERE date = $1 AND mode = 'live' AND status NOT LIKE 'REJECTED%' AND status NOT LIKE 'FAILED%'`,
+    [date]
+  );
+  return Number(rows[0].s);
+}
+
 // Tesorería del día (vista para operadores): costo promedio LOGRADO por el Híbrido hoy
 export async function treasuryToday(now = Date.now()) {
   const date = tradingDate(now);
