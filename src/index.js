@@ -8,11 +8,11 @@ import { fetchBtc } from './sources/btc.js';
 import { fetchRfqBuy, fetchRfqSell } from './sources/rfq.js';
 import { fetchNews } from './sources/news.js';
 import { evaluateSignal, indicatorSnapshot } from './signals.js';
-import { onSignal, onSlotCheck, onTraderTick, onVerdict, onMomentum, onMomentumOpus, onHybridHour } from './trader.js';
+import { onSignal, onSlotCheck, onTraderTick, onVerdict, onMomentum, onMomentumOpus, onHybridHour, onTesoreroHour } from './trader.js';
 import { evaluateOutcomes } from './outcomes.js';
 import { alertSignal, alertNews, sendAlert } from './alerts.js';
 import { allEvents, upcomingEvents } from './calendar.js';
-import { buildAnalysisContext, insertAnalysis, latestAnalysis, hourlyCloses } from './queries.js';
+import { buildAnalysisContext, insertAnalysis, latestAnalysis, hourlyCloses, prevDayChange } from './queries.js';
 import { zscore } from './indicators.js';
 import { runScout, runAnalyst, runMomentumAnalyst, aiEnabled } from './analyst.js';
 import { startServer } from './server.js';
@@ -147,6 +147,12 @@ async function minuteTick() {
           await sendAlert('🌊 Híbrido compró un dip',
             `$${Math.round(ht.mxn).toLocaleString('es-MX')} MXN @ ${ht.price.toFixed(4)} · z 24h: ${z.toFixed(2)}\nEl precio cayó vs su promedio de 24h — compra oportunista para tesorería.`);
         }
+      }
+      // TESORERO (regime-switcher): mismo z horario + el cambio del día previo como régimen
+      const prevChg = await prevDayChange();
+      const tt = await onTesoreroHour(Date.now(), z, prevChg, buyPrice());
+      if (tt) {
+        console.log(`🏦 [${cdmxTime()}] Tesorero [${tt.mode}] ${tt.reason === 'dip' ? 'DIP' : 'ritmo'}: $${Math.round(tt.mxn).toLocaleString('es-MX')} @ ${tt.price.toFixed(4)} (z ${z.toFixed(2)}, ayer ${prevChg == null ? '?' : prevChg.toFixed(1)}¢)`);
       }
     }
     await evaluateOutcomes();

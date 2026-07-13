@@ -72,6 +72,24 @@ export function hourlyCloses(source, hours = 26) {
   );
 }
 
+// Cambio del DÍA PREVIO en centavos (último − primer precio bitso del día anterior
+// con datos, en hora CDMX). Es la señal de régimen del Tesorero.
+export async function prevDayChange(now = Date.now()) {
+  const today = tradingDate(now);
+  const rows = await q(
+    `WITH t AS (
+       SELECT ts, price,
+              to_char(to_timestamp(ts/1000.0) AT TIME ZONE $1, 'YYYY-MM-DD') AS d
+       FROM ticks WHERE source = 'bitso' AND ts > $3
+     )
+     SELECT ((array_agg(price ORDER BY ts DESC))[1] - (array_agg(price ORDER BY ts ASC))[1]) * 100 AS chg
+     FROM t WHERE d = (SELECT MAX(d) FROM t WHERE d < $2)`,
+    [CONFIG.TIMEZONE, today, now - 4 * 86_400_000]
+  );
+  const chg = rows[0]?.chg;
+  return chg == null ? null : Number(chg);
+}
+
 // Tesorería del día (vista para operadores): costo promedio LOGRADO por el Híbrido hoy
 export async function treasuryToday(now = Date.now()) {
   const date = tradingDate(now);

@@ -5,7 +5,7 @@
 import { CONFIG, tradingDate } from './config.js';
 import { insertTrade, spent, traderPosition } from './queries.js';
 import {
-  ACCUMULATORS, TRADER, HYBRID, AI_MIN_CONFIDENCE, dayPlan, sessionWeight, cdmxMinutes,
+  ACCUMULATORS, TRADER, HYBRID, TESORERO, AI_MIN_CONFIDENCE, dayPlan, sessionWeight, cdmxMinutes,
 } from './strategies.js';
 
 const CATCHUP_SLOTS = 4;           // slots finales donde se acelera al 100%
@@ -203,6 +203,50 @@ export async function onHybridHour(now, z, execPrice) {
   // 22-24h: nada (ya completó a las 10pm)
   if (amt < 1) return null;
   return execute('hybrid', reason, amt, execPrice, null, now);
+}
+
+// TESORERO — el regime-switcher ganador del mega-grid walk-forward. Decisión UNA VEZ
+// POR HORA. El régimen lo fija el CAMBIO DEL DÍA PREVIO (¢): subió >+T → hoy parejo
+// estilo operadores (OPS); bajó <−T → reversión total (REV); plano → reversión a media
+// intensidad (REVLIGHT ejecutable: chunks a la mitad). reason='dip' en compras oportunistas.
+let lastTesoreroHourKey = null;
+export async function onTesoreroHour(now, z, prevChg, execPrice) {
+  if (!execPrice) return null;
+  const minutes = cdmxMinutes(now);
+  const hour = Math.floor(minutes / 60);
+  const key = `${tradingDate(now)}:${hour}`;
+  if (key === lastTesoreroHourKey) return null;    // una decisión por hora
+  lastTesoreroHourKey = key;
+
+  const date = tradingDate(now);
+  const budget = CONFIG.DAILY_BUDGET_MXN;
+  const remaining = budget - await spent(date, 'tesorero');
+  if (remaining < 1) return null;
+
+  const T = TESORERO;
+  // sin dato del día previo → modo plano (el más conservador de los tres)
+  const mode = prevChg == null ? 'light' : prevChg > T.trendT ? 'ops' : prevChg < -T.trendT ? 'rev' : 'light';
+  const f = mode === 'light' ? T.lightFactor : 1;
+
+  let amt = 0, reason = 'slot';
+  if (hour < T.nightEnd) {
+    // madrugada: solo dips fuertes, y nunca en modo OPS
+    if (mode !== 'ops' && z != null && z <= T.zStrong) { amt = Math.min(budget * T.strongPct * f, remaining); reason = 'dip'; }
+  } else if (hour < T.endHour) {
+    const hoursLeft = T.endHour - hour;
+    if (hoursLeft <= 1) amt = remaining;                                    // última hora: completa
+    else if (mode === 'ops') amt = remaining / hoursLeft;                   // tras subida: parejo, sin heroísmos
+    else if (hoursLeft <= T.finalHours) amt = remaining / hoursLeft;        // recta final pareja
+    else if (z != null && z <= T.zStrong) { amt = Math.min(budget * T.strongPct * f, remaining); reason = 'dip'; }
+    else if (z != null && z <= T.zDip)    { amt = Math.min(budget * T.dipPct * f, remaining); reason = 'dip'; }
+    else if (z != null && z >= T.zDefer)  amt = 0;                          // subiendo: difiere
+    else amt = Math.min(remaining, remaining / hoursLeft * T.pace);         // neutro: ritmo lento
+  }
+  // 22-24h: nada (ya completó a las 10pm)
+  if (amt < 1) return null;
+  const t = await execute('tesorero', reason, amt, execPrice, null, now);
+  if (t) t.mode = mode;
+  return t;
 }
 
 // Trader: compra barato y VENDE caro en puntos clave. Mide ganancia realizada.

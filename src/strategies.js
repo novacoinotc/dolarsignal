@@ -66,6 +66,12 @@ export const ACCUMULATORS = {
   // Maneja su propia lógica horaria (onHybridHour); excluida de los slots genéricos.
   hybrid:        { label: 'Híbrido', color: '#22d3ee', hybrid: true, slotPace: 0, signalBuyPct: 0, strongBuyPct: 0,
                    sessionAware: false, fridayPreload: false },
+  // TESORERO — ganador del mega-grid walk-forward de 2 años (train +0.261 / val +0.253 ¢/día).
+  // Regla de régimen con el DÍA PREVIO: ayer subió >+5¢ → hoy ritmo parejo estilo operadores
+  // (sin heroísmos); ayer bajó <−5¢ → reversión total; plano → reversión a media intensidad.
+  // Corre en shadow (paper, RFQ real, viernes/findes incluidos) para validar el backtest.
+  tesorero:      { label: 'Tesorero', color: '#c084fc', tesorero: true, slotPace: 0, signalBuyPct: 0, strongBuyPct: 0,
+                   sessionAware: false, fridayPreload: false },
 };
 
 // Parámetros del Híbrido (espejo exacto del backtest business-2y.js)
@@ -75,6 +81,17 @@ export const HYBRID = {
   nightEnd: 8,      // 00-08h: solo dips fuertes
   endHour: 22,      // completa el presupuesto a las 10pm (cierre de operación)
   finalHours: 3,    // recta final: ritmo parejo garantiza completar
+};
+
+// Parámetros del Tesorero (espejo exacto de backtest/switcher-refine.js, política ganadora
+// "up→OPS dn→REV flat→REVLIGHT" T=5¢ lookback=1 día; motor REV: z−1→10%, z−2→30%,
+// diferir z≥1.5, pace 0.5, madrugada solo z≤−2, completa 22h)
+export const TESORERO = {
+  trendT: 5,                          // ¢: umbral del cambio del día previo
+  zStrong: -2, zDip: -1, zDefer: 1.5,
+  strongPct: 0.30, dipPct: 0.10, pace: 0.5,
+  lightFactor: 0.5,                   // modo plano: chunks a la mitad (REVLIGHT ejecutable)
+  nightEnd: 8, endHour: 22, finalHours: 3,
 };
 
 // Confianza mínima de Opus para que las gemelas IA actúen sobre un veredicto
