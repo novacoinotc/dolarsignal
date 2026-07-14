@@ -74,7 +74,7 @@ export const CONFIG = {
   EXEC_MODE: (process.env.EXEC_MODE || 'off').toLowerCase(),
   EXEC_DAILY_CAP_MXN: Number(process.env.EXEC_DAILY_CAP_MXN || 500_000),   // tope diario duro
   EXEC_MAX_PREMIUM_CENT: Number(process.env.EXEC_MAX_PREMIUM_CENT || 6),   // rechaza si prima RFQ > 6¢ vs público
-  EXEC_MIN_MXN: Number(process.env.EXEC_MIN_MXN || 5_000),                 // ignora compras espejo menores a esto
+  EXEC_MIN_MXN: Number(process.env.EXEC_MIN_MXN || 20_000),                // mínimo por compra (Bitso RFQ exige ≥$17,500 MXN)
 
   // ── Agente de IA (scout Haiku + analista Opus) ────────────
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',

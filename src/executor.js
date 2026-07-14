@@ -94,9 +94,11 @@ async function mirror(t) {
   // escala: la proporción del paper ($25M) aplicada al tope real
   const scale = CONFIG.EXEC_DAILY_CAP_MXN / CONFIG.DAILY_BUDGET_MXN;
   let mxn = Math.round(t.mxn * scale);
-  const already = await realSpent(date);
-  mxn = Math.min(mxn, CONFIG.EXEC_DAILY_CAP_MXN - already);  // tope diario DURO (desde DB)
-  if (mxn < CONFIG.EXEC_MIN_MXN) return;
+  const already = await realSpent(date, CONFIG.EXEC_MODE);
+  const capLeft = CONFIG.EXEC_DAILY_CAP_MXN - already;       // tope diario DURO (desde DB)
+  if (capLeft < CONFIG.EXEC_MIN_MXN) return;                 // día completado
+  // Bitso RFQ exige ≥$17,500 por cotización: sube al mínimo las compras chicas
+  mxn = Math.min(Math.max(mxn, CONFIG.EXEC_MIN_MXN), capLeft);
 
   const record = { ts: now, date, mode: CONFIG.EXEC_MODE, strategy: t.strategy, reason: t.reason, mxn, price: 0, usdt: 0, quoteId: null, conversionId: null, status: '' };
   try {
@@ -141,7 +143,7 @@ async function mirror(t) {
       `Estrategia: ${t.strategy} (${t.reason}) · Gastado hoy: $${(already + mxn).toLocaleString('es-MX')} de $${CONFIG.EXEC_DAILY_CAP_MXN.toLocaleString('es-MX')}`);
   } catch (err) {
     consecutiveFails++;
-    record.status = `FAILED_${err.message.slice(0, 60)}`;
+    record.status = `FAILED_${err.message.slice(0, 180)}`;
     await insertRealTrade(record).catch(() => {});
     console.error(`[executor] falla ${consecutiveFails}/${MAX_FAILS}: ${err.message}`);
     if (consecutiveFails >= MAX_FAILS) {

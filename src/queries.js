@@ -99,12 +99,13 @@ export function insertRealTrade(r) {
   );
 }
 
-// Gastado REAL hoy (solo conversiones ejecutadas o en vuelo; excluye rechazos/fallas/ensayos)
-export async function realSpent(date) {
+// Gastado hoy contra el tope diario, DEL MODO ACTUAL (los ensayos dry también consumen
+// su tope, para que el ensayo simule fielmente al live). Excluye rechazos y fallas.
+export async function realSpent(date, mode) {
   const rows = await q(
     `SELECT COALESCE(SUM(mxn),0) s FROM real_trades
-     WHERE date = $1 AND mode = 'live' AND status NOT LIKE 'REJECTED%' AND status NOT LIKE 'FAILED%'`,
-    [date]
+     WHERE date = $1 AND mode = $2 AND status NOT LIKE 'REJECTED%' AND status NOT LIKE 'FAILED%'`,
+    [date, mode]
   );
   return Number(rows[0].s);
 }
