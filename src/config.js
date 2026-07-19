@@ -75,6 +75,9 @@ export const CONFIG = {
   EXEC_DAILY_CAP_MXN: Number(process.env.EXEC_DAILY_CAP_MXN || 500_000),   // tope diario duro
   EXEC_MAX_PREMIUM_CENT: Number(process.env.EXEC_MAX_PREMIUM_CENT || 6),   // rechaza si prima RFQ > 6¢ vs público
   EXEC_MIN_MXN: Number(process.env.EXEC_MIN_MXN || 20_000),                // mínimo por compra (Bitso RFQ exige ≥$17,500 MXN)
+  // Estrategia a espejar en real: nombre fijo (ej. 'smart_ai') o 'capitan' (switcher por régimen).
+  // Default smart_ai: la líder 3/3 ventanas y mayor $ acumulado del laboratorio (2026-07-18).
+  EXEC_STRATEGY: process.env.EXEC_STRATEGY || 'smart_ai',
 
   // ── Agente de IA (scout Haiku + analista Opus) ────────────
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',

@@ -36,9 +36,11 @@ export const CAPITAN = { trendT: 5, up: 'aggressive_ai', down: 'aggressive', fla
 export function initExecutor({ publicPrice, alert }) {
   if (publicPrice) getPublicPrice = publicPrice;
   if (alert) alertFn = alert;
+  const pol = CONFIG.EXEC_STRATEGY === 'capitan'
+    ? `capitán ↑${CAPITAN.up} ↓${CAPITAN.down} =${CAPITAN.flat} (T${CAPITAN.trendT}¢)`
+    : `espeja ${CONFIG.EXEC_STRATEGY}`;
   console.log(`   Ejecutor real: modo ${CONFIG.EXEC_MODE.toUpperCase()}` +
-    (CONFIG.EXEC_MODE === 'off' ? '' :
-      ` · tope $${CONFIG.EXEC_DAILY_CAP_MXN.toLocaleString('es-MX')}/día · capitán ↑${CAPITAN.up} ↓${CAPITAN.down} =${CAPITAN.flat} (T${CAPITAN.trendT}¢)`));
+    (CONFIG.EXEC_MODE === 'off' ? '' : ` · tope $${CONFIG.EXEC_DAILY_CAP_MXN.toLocaleString('es-MX')}/día · ${pol}`));
 }
 
 function authHeader(method, path, body) {
@@ -62,8 +64,9 @@ async function bitsoPost(path, payloadObj) {
   return j.payload || j;
 }
 
-// Estrategia activa HOY según el régimen del día previo (cacheada por fecha)
+// Estrategia activa HOY: fija (EXEC_STRATEGY) o por régimen del día previo ('capitan')
 export async function activeStrategy(now = Date.now()) {
+  if (CONFIG.EXEC_STRATEGY !== 'capitan') return { strategy: CONFIG.EXEC_STRATEGY, prevChg: null };
   const date = tradingDate(now);
   if (regimeCache.date !== date) {
     const prevChg = await prevDayChange(now);
