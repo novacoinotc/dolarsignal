@@ -5,7 +5,7 @@ import path from 'node:path';
 import { CONFIG } from './config.js';
 import {
   lastTick, minuteCloses, ohlc, recentSignals, recentTrades, recentNews,
-  performance, dailyPerformance, signalQuality, todayStats, traderPnl, fridayEffect, rfqByHour, treasuryToday, realTreasury,
+  performance, dailyPerformance, signalQuality, todayStats, traderPnl, fridayEffect, rfqByHour, treasuryToday, realTreasury, realDaily, realRecent,
   latestAnalysis, recentAnalyses,
 } from './queries.js';
 import { indicatorSnapshot } from './signals.js';
@@ -42,6 +42,11 @@ export async function buildState() {
 // Mapa de rutas → handler, reutilizado por el server local y las funciones Vercel
 export const API = {
   state: () => buildState(),
+  // Operación REAL: día a día vs benchmark de operadores + últimas compras reales
+  real: async () => {
+    const [daily, trades] = await Promise.all([realDaily(), realRecent()]);
+    return { daily, trades };
+  },
   candles: async (params) => {
     const hours = Math.min(Number(params.hours || 24), 168);
     const since = Date.now() - hours * 3600_000;

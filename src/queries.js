@@ -153,6 +153,39 @@ export async function realTreasury(now = Date.now()) {
   };
 }
 
+// OPERACIÓN REAL día a día: lo comprado de verdad vs el benchmark de los operadores
+// (TWAP del RFQ 8am-10pm del mismo día) → ahorro en ¢ y en MXN por día.
+export async function realDaily() {
+  return q(
+    `WITH buys AS (
+       SELECT date, SUM(mxn) mxn, SUM(usdt) usdt, SUM(mxn)/SUM(usdt) avg, COUNT(*) n
+       FROM real_trades
+       WHERE mode = 'live' AND status NOT LIKE 'REJECTED%' AND status NOT LIKE 'FAILED%'
+       GROUP BY date
+     ), bench AS (
+       SELECT to_char(to_timestamp(ts/1000.0) AT TIME ZONE '${'America/Mexico_City'}','YYYY-MM-DD') d,
+              AVG(price) tw
+       FROM ticks
+       WHERE source = 'rfq'
+         AND extract(hour FROM to_timestamp(ts/1000.0) AT TIME ZONE 'America/Mexico_City') BETWEEN 8 AND 21
+       GROUP BY 1
+     )
+     SELECT b.date, b.mxn, b.usdt, b.avg, b.n, bench.tw,
+            (bench.tw - b.avg) * 100 AS cent,
+            (bench.tw - b.avg) * b.usdt AS saved_mxn
+     FROM buys b LEFT JOIN bench ON bench.d = b.date
+     ORDER BY b.date DESC LIMIT 30`
+  );
+}
+
+// Últimas compras reales (para la tabla del dashboard)
+export function realRecent(limit = 40) {
+  return q(
+    `SELECT ts, date, mode, strategy, reason, mxn, price, usdt, status
+     FROM real_trades ORDER BY ts DESC LIMIT $1`, [limit]
+  );
+}
+
 // Tesorería del día (vista para operadores): costo promedio LOGRADO por el Híbrido hoy
 export async function treasuryToday(now = Date.now()) {
   const date = tradingDate(now);

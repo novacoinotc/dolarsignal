@@ -23,8 +23,9 @@
   .panel { background:var(--panel); border:1px solid var(--border); border-radius:7px; padding:11px; margin-bottom:9px; }
   .panel h2 { font-size:12.5px; margin-bottom:8px; color:var(--blue); }
   .cols-3 { grid-template-columns:1fr 1fr 1fr; }
+  .cols-2 { grid-template-columns:1fr 1fr; margin-bottom:9px; }
   @media (max-width:1100px){ .cols-3{ grid-template-columns:1fr 1fr; } }
-  @media (max-width:680px){ .cols-3{ grid-template-columns:1fr; } body{ padding:7px; } .card .value{ font-size:17px; } }
+  @media (max-width:680px){ .cols-3{ grid-template-columns:1fr; } .cols-2{ grid-template-columns:1fr; } body{ padding:7px; } .card .value{ font-size:17px; } }
   .scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   table { width:100%; border-collapse:collapse; font-size:12px; white-space:nowrap; }
   th { text-align:left; color:var(--muted); font-weight:500; padding:4px 6px; border-bottom:1px solid var(--border); font-size:10.5px; }
@@ -59,7 +60,7 @@
 </style>
 </head>
 <body>
-<div><h1>💵 DolarSignal</h1> <span class="sub">· $25M MXN/día · <span id="updated"></span></span></div>
+<div><h1>💵 DolarSignal</h1> <span class="sub">· 💵 tesorería real activa · <span id="updated"></span></span></div>
 
 <div class="banner" id="blackout"></div>
 
@@ -68,9 +69,11 @@
   <div id="real-body"></div>
 </div>
 
-<div class="panel" id="treasury-panel" style="display:none;border-color:#0e7490;background:#07161c">
-  <h2 style="color:#67e8f9">💼 Tesorería — costo promedio del día (Híbrido) <span class="pill">para operadores</span></h2>
-  <div id="treasury-body"></div>
+<div class="panel" id="realops-panel" style="display:none;border-color:#15803d">
+  <h2 style="color:#4ade80">📊 Operación real — día a día <span class="pill">vs costo de operadores (TWAP 8-22h)</span></h2>
+  <div class="scroll"><table id="realdaily"><thead><tr><th>Fecha</th><th>Comprado</th><th>USDT</th><th>Costo prom.</th><th>Operadores</th><th>Ahorro ¢</th><th>Ahorro $</th></tr></thead><tbody></tbody></table></div>
+  <h2 style="margin-top:10px;color:#4ade80;font-size:12px">💵 Últimas compras reales</h2>
+  <div class="feed scroll"><table id="realtrades"><thead><tr><th>Cuándo</th><th>Modo</th><th>Origen</th><th>MXN</th><th>Precio</th><th>Estado</th></tr></thead><tbody></tbody></table></div>
 </div>
 
 <div class="panel" id="ai-panel" style="display:none;border-color:#8957e5;background:#1a1226">
@@ -79,14 +82,6 @@
 </div>
 
 <div class="grid cards" id="cards" style="margin-top:9px"></div>
-
-<div class="panel">
-  <h2>🏆 Ranking — ¿cuánto gana cada estrategia? (vs comprar a lo tonto / TWAP)</h2>
-  <div class="scroll"><table id="leader" class="leader"><thead><tr>
-    <th>#</th><th>Estrategia</th><th>Precio prom.</th><th>¢/USDT</th><th>💰 Ganancia</th><th>USDT</th><th>#señ.</th>
-  </tr></thead><tbody></tbody></table></div>
-  <div class="tbox" id="traderbox"></div>
-</div>
 
 <div class="panel">
   <h2 style="display:inline">📊 Gráfica</h2>
@@ -100,33 +95,54 @@
   <div id="chart-box"></div>
 </div>
 
-<div class="grid cols-3">
+<div class="grid cols-2">
+  <div class="panel" style="margin:0"><h2>📰 Noticias (USD/MXN y cripto) <span class="pill">tiempo real</span></h2><div class="feed" id="news"></div></div>
   <div class="panel" style="margin:0">
-    <h2>📅 Por día (¢ vs pareja)</h2>
-    <div class="scroll"><table id="daily"><thead></thead><tbody></tbody></table></div>
-  </div>
-  <div class="panel" style="margin:0">
-    <h2>🕐 RFQ por hora <span class="pill">¿cuándo conviene?</span></h2>
-    <div id="rfqhour" style="font-size:11px;color:var(--muted)"></div>
-  </div>
-  <div class="panel" style="margin:0">
-    <h2>🎯 Calidad de señales</h2>
-    <div class="scroll"><table id="quality"><thead><tr><th>Tier</th><th>Horiz.</th><th>#</th><th>Δ¢</th><th>%ok</th></tr></thead><tbody></tbody></table></div>
-  </div>
-</div>
-
-<div class="grid cols-3">
-  <div class="panel" style="margin:0"><h2>🔔 Señales recientes</h2><div class="feed" id="signals"></div></div>
-  <div class="panel" style="margin:0"><h2>💰 Operaciones</h2><div class="feed scroll"><table id="trades"><thead><tr><th>Hora</th><th>Estrategia</th><th>Tipo</th><th>MXN</th><th>Precio</th><th>+1h</th></tr></thead><tbody></tbody></table></div></div>
-  <div class="panel" style="margin:0">
-    <h2>🗓️ Efecto viernes</h2>
-    <div class="scroll"><table id="friday"><thead><tr><th>Viernes</th><th>Cierre</th><th>Finde</th><th>Δ¢</th></tr></thead><tbody></tbody></table></div>
-    <h2 style="margin-top:12px">📌 Próximos eventos</h2>
+    <h2>📌 Próximos eventos (Fed, Banxico, económicos)</h2>
     <div class="scroll"><table id="events"><thead><tr><th>Fecha</th><th>Evento</th></tr></thead><tbody></tbody></table></div>
   </div>
 </div>
 
-<div class="panel"><h2>📰 Noticias (USD/MXN y cripto)</h2><div class="feed" id="news"></div></div>
+<details class="panel" style="border-color:#30363d">
+  <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)">🧪 Laboratorio — las 14 estrategias siguen compitiendo en paper (toca para abrir)</summary>
+
+  <div class="panel" id="treasury-panel" style="display:none;border-color:#0e7490;background:#07161c;margin-top:10px">
+    <h2 style="color:#67e8f9">💼 Tesorería paper — costo promedio del día (Híbrido)</h2>
+    <div id="treasury-body"></div>
+  </div>
+
+  <div class="panel" style="margin-top:10px">
+    <h2>🏆 Ranking — ¿cuánto gana cada estrategia? (vs comprar a lo tonto / TWAP)</h2>
+    <div class="scroll"><table id="leader" class="leader"><thead><tr>
+      <th>#</th><th>Estrategia</th><th>Precio prom.</th><th>¢/USDT</th><th>💰 Ganancia</th><th>USDT</th><th>#señ.</th>
+    </tr></thead><tbody></tbody></table></div>
+    <div class="tbox" id="traderbox"></div>
+  </div>
+
+  <div class="grid cols-3" style="margin-top:10px">
+    <div class="panel" style="margin:0">
+      <h2>📅 Por día (¢ vs pareja)</h2>
+      <div class="scroll"><table id="daily"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="panel" style="margin:0">
+      <h2>🕐 RFQ por hora <span class="pill">¿cuándo conviene?</span></h2>
+      <div id="rfqhour" style="font-size:11px;color:var(--muted)"></div>
+    </div>
+    <div class="panel" style="margin:0">
+      <h2>🎯 Calidad de señales</h2>
+      <div class="scroll"><table id="quality"><thead><tr><th>Tier</th><th>Horiz.</th><th>#</th><th>Δ¢</th><th>%ok</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <div class="grid cols-3" style="margin-top:10px">
+    <div class="panel" style="margin:0"><h2>🔔 Señales recientes</h2><div class="feed" id="signals"></div></div>
+    <div class="panel" style="margin:0"><h2>💰 Operaciones paper</h2><div class="feed scroll"><table id="trades"><thead><tr><th>Hora</th><th>Estrategia</th><th>Tipo</th><th>MXN</th><th>Precio</th><th>+1h</th></tr></thead><tbody></tbody></table></div></div>
+    <div class="panel" style="margin:0">
+      <h2>🗓️ Efecto viernes</h2>
+      <div class="scroll"><table id="friday"><thead><tr><th>Viernes</th><th>Cierre</th><th>Finde</th><th>Δ¢</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+</details>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -232,6 +248,25 @@ function renderRfqHour(rows){
     html+=`<div class="hourrow ${r.hour===nowHour?'hournow':''}"><span>${String(r.hour).padStart(2,'0')}h</span><div class="hourbar"><div style="left:50%;width:1px;background:#484f58"></div>${bar}</div><span class="${cls(e)}" style="text-align:right">${cent(e)}</span></div>`;
   }
   $('rfqhour').innerHTML=html;
+}
+
+// Operación real: día a día vs operadores + últimas compras reales
+async function loadReal(){
+  try{
+    const r = await (await fetch('/api/real')).json();
+    if(!r.daily || !r.daily.length){ $('realops-panel').style.display='none'; return; }
+    $('realops-panel').style.display='block';
+    let accCent=0, accMxn=0, nd=0;
+    $('realdaily').querySelector('tbody').innerHTML = r.daily.map(d=>{
+      const cent = d.cent!=null?Number(d.cent):null, sv = d.saved_mxn!=null?Number(d.saved_mxn):null;
+      if(cent!=null){ accCent+=cent; accMxn+=sv; nd++; }
+      return `<tr><td>${d.date}</td><td>${fmtMxn(d.mxn)}</td><td>${fmtUsdt(d.usdt)}</td><td>${fmt(d.avg)}</td><td>${d.tw?fmt(d.tw):'—'}</td><td class="${cent!=null?cls(cent):''}">${cent!=null?(cent>=0?'+':'')+cent.toFixed(2):'—'}</td><td class="${sv!=null?cls(sv):''}">${sv!=null?fmtMxn(sv):'—'}</td></tr>`;
+    }).join('') + (nd>1?`<tr style="font-weight:700;border-top:1px solid #30363d"><td>TOTAL (${nd}d)</td><td></td><td></td><td></td><td></td><td class="${cls(accCent)}">${(accCent>=0?'+':'')+accCent.toFixed(2)}</td><td class="${cls(accMxn)}">${fmtMxn(accMxn)}</td></tr>`:'');
+    $('realtrades').querySelector('tbody').innerHTML = (r.trades||[]).map(t=>{
+      const ok = t.status==='COMPLETED'||t.status==='DRY';
+      return `<tr><td>${new Date(Number(t.ts)).toLocaleString('es-MX',{timeZone:'America/Mexico_City',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${t.mode==='live'?'💵 real':'🧪 ensayo'}</td><td>${t.strategy}/${t.reason}</td><td>${fmtMxn(t.mxn)}</td><td>${Number(t.price)?fmt(t.price):'—'}</td><td class="${ok?'pos':'neg'}">${String(t.status).slice(0,24)}</td></tr>`;
+    }).join('');
+  }catch(e){ console.error('real', e); }
 }
 
 // Reportar venta de USDT del stock real (baja el stock; el promedio sigue con las compras)
@@ -342,6 +377,7 @@ async function refresh(){
 
 loadChart(); refresh();
 setInterval(refresh, 15000);
+loadReal(); setInterval(loadReal, 60000);
 setInterval(loadChart, 60000);
 </script>
 </body>
