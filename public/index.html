@@ -234,6 +234,23 @@ function renderRfqHour(rows){
   $('rfqhour').innerHTML=html;
 }
 
+// Reportar venta de USDT del stock real (baja el stock; el promedio sigue con las compras)
+async function reportSale(){
+  const raw = prompt('¿Cuántos USDT se vendieron?\n(ejemplo: 58304.23)');
+  if(!raw) return;
+  const usdt = Number(String(raw).replace(/[,$\s]/g,''));
+  if(!usdt || usdt <= 0){ alert('Monto inválido'); return; }
+  let pin = localStorage.getItem('salePin');
+  if(!pin){ pin = prompt('PIN de tesorería:'); if(!pin) return; }
+  try{
+    const r = await fetch('/api/sale',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ usdt, pin }) });
+    if(r.ok){ localStorage.setItem('salePin', pin); alert('✓ Venta registrada: '+usdt.toLocaleString('es-MX')+' USDT'); refresh(); }
+    else if(r.status===401){ localStorage.removeItem('salePin'); alert('PIN incorrecto'); }
+    else{ const e = await r.json().catch(()=>({})); alert('Error: '+(e.error||r.status)); }
+  }catch(e){ alert('Error de red: '+e.message); }
+}
+
 async function refresh(){
   try{
     const [state,signals,trades,news,perf] = await Promise.all(['state','signals','trades','news','performance'].map(p=>fetch('/api/'+p).then(r=>r.json())));
@@ -255,6 +272,7 @@ async function refresh(){
           <div><div class="lbl" style="color:var(--muted);font-size:10px">RFQ AHORA</div><span style="font-size:22px;font-weight:700">${fmt(spotNow)}</span></div>
           <div><div class="lbl" style="color:var(--muted);font-size:10px">VENTAJA vs COMPRAR AHORITA</div><span style="font-size:22px;font-weight:700" class="${dReal!=null?cls(dReal):''}">${dReal!=null?(dReal>=0?'+':'')+dReal.toFixed(2)+'¢':'—'}</span></div>
           <div style="color:var(--muted);font-size:11px">comprados ${fmtUsdt(re.boughtUsdt)} · vendidos ${fmtUsdt(re.soldUsdt)} · hoy ${fmtMxn(re.todayMxn)} (${fmtUsdt(re.todayUsdt)} USDT) · ${re.buysCount} compras</div>
+          <div><button onclick="reportSale()" style="background:#14532d;color:#bbf7d0;border:1px solid #22c55e;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">📤 Reportar venta</button></div>
         </div>
         <div style="font-size:10.5px;color:var(--muted);margin-top:5px">${dReal==null?'':dReal>=0?'✅ El stock real costó MÁS BARATO que el RFQ actual — cada venta lleva ese margen extra.':'⏳ El RFQ bajó respecto a nuestro promedio — las próximas compras promediarán hacia abajo.'}</div>`;
     } else { $('real-panel').style.display='none'; }

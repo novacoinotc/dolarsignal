@@ -110,6 +110,14 @@ export async function realSpent(date, mode) {
   return Number(rows[0].s);
 }
 
+// Registrar una venta de USDT del stock real (reportada desde el dashboard)
+export function insertRealSale(s) {
+  return q(
+    `INSERT INTO real_sales (ts, date, usdt, price, note) VALUES ($1,$2,$3,$4,$5)`,
+    [s.ts, tradingDate(s.ts), s.usdt, s.price ?? null, s.note ?? null]
+  );
+}
+
 // TESORERÍA REAL: inventario de USDT comprados de verdad (real_trades live) menos los
 // vendidos reportados (real_sales), a COSTO PROMEDIO PONDERADO (las ventas salen al
 // promedio vigente, así el costo del stock restante refleja lo que de verdad costó).
