@@ -110,6 +110,41 @@ export async function realSpent(date, mode) {
   return Number(rows[0].s);
 }
 
+// TESORERÍA REAL: inventario de USDT comprados de verdad (real_trades live) menos los
+// vendidos reportados (real_sales), a COSTO PROMEDIO PONDERADO (las ventas salen al
+// promedio vigente, así el costo del stock restante refleja lo que de verdad costó).
+export async function realTreasury(now = Date.now()) {
+  const today = tradingDate(now);
+  const buys = await q(
+    `SELECT ts, date, mxn, usdt FROM real_trades
+     WHERE mode = 'live' AND status NOT LIKE 'REJECTED%' AND status NOT LIKE 'FAILED%'
+     ORDER BY ts`);
+  if (!buys.length) return null;
+  const sales = await q(`SELECT ts, usdt FROM real_sales ORDER BY ts`);
+  const events = [
+    ...buys.map(b => ({ ts: Number(b.ts), type: 'b', usdt: Number(b.usdt), mxn: Number(b.mxn) })),
+    ...sales.map(s => ({ ts: Number(s.ts), type: 's', usdt: Number(s.usdt) })),
+  ].sort((a, b) => a.ts - b.ts);
+  let stockU = 0, stockM = 0, boughtU = 0, spentM = 0, soldU = 0;
+  for (const e of events) {
+    if (e.type === 'b') { stockU += e.usdt; stockM += e.mxn; boughtU += e.usdt; spentM += e.mxn; }
+    else {
+      const avg = stockU > 0 ? stockM / stockU : 0;
+      const u = Math.min(e.usdt, stockU);
+      stockU -= u; stockM -= u * avg; soldU += e.usdt;
+    }
+  }
+  const todayRows = buys.filter(b => b.date === today);
+  return {
+    stockUsdt: stockU,
+    avgCost: stockU > 0 ? stockM / stockU : null,   // costo promedio del stock actual
+    boughtUsdt: boughtU, soldUsdt: soldU, spentMxn: spentM,
+    todayMxn: todayRows.reduce((s, b) => s + Number(b.mxn), 0),
+    todayUsdt: todayRows.reduce((s, b) => s + Number(b.usdt), 0),
+    buysCount: buys.length,
+  };
+}
+
 // Tesorería del día (vista para operadores): costo promedio LOGRADO por el Híbrido hoy
 export async function treasuryToday(now = Date.now()) {
   const date = tradingDate(now);

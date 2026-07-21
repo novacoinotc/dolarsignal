@@ -106,5 +106,16 @@ export async function initSchema() {
       status TEXT NOT NULL           -- 'DRY' | 'COMPLETED' | 'FAILED' | 'REJECTED_<motivo>'
     );
     CREATE INDEX IF NOT EXISTS idx_real_trades ON real_trades (date);
+
+    -- Ventas de USDT del stock real (reportadas por los operadores/el usuario).
+    -- Salen del inventario al costo promedio vigente (costo promedio ponderado).
+    CREATE TABLE IF NOT EXISTS real_sales (
+      id BIGSERIAL PRIMARY KEY,
+      ts BIGINT NOT NULL,
+      date TEXT NOT NULL,
+      usdt DOUBLE PRECISION NOT NULL,
+      price DOUBLE PRECISION,          -- precio de venta (opcional, informativo)
+      note TEXT
+    );
   `);
 }

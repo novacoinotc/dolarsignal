@@ -63,6 +63,11 @@
 
 <div class="banner" id="blackout"></div>
 
+<div class="panel" id="real-panel" style="display:none;border-color:#15803d;background:#071c0e">
+  <h2 style="color:#4ade80">💰 Tesorería REAL — stock de USDT comprados <span class="pill">dinero real</span></h2>
+  <div id="real-body"></div>
+</div>
+
 <div class="panel" id="treasury-panel" style="display:none;border-color:#0e7490;background:#07161c">
   <h2 style="color:#67e8f9">💼 Tesorería — costo promedio del día (Híbrido) <span class="pill">para operadores</span></h2>
   <div id="treasury-body"></div>
@@ -236,6 +241,23 @@ async function refresh(){
     $('updated').textContent = 'act. '+when(state.now);
     $('blackout').style.display = state.blackout?'block':'none';
     if(state.blackout) $('blackout').textContent='⛔ VENTANA DE RIESGO: '+state.blackout+' — compras por señal bloqueadas';
+
+    // TESORERÍA REAL: stock de USDT comprados con dinero real, a costo promedio ponderado
+    const re = state.real;
+    if(re && re.boughtUsdt > 0 && state.rfq){
+      const spotNow = state.rfq.price;
+      const dReal = re.avgCost != null ? (spotNow - re.avgCost) * 100 : null;
+      $('real-panel').style.display='block';
+      $('real-body').innerHTML = `
+        <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:baseline">
+          <div><div class="lbl" style="color:var(--muted);font-size:10px">STOCK ACTUAL</div><span style="font-size:22px;font-weight:700">${fmtUsdt(re.stockUsdt)} USDT</span></div>
+          <div><div class="lbl" style="color:var(--muted);font-size:10px">COSTO PROM. DEL STOCK</div><span style="font-size:22px;font-weight:700">${re.avgCost!=null?fmt(re.avgCost):'—'}</span></div>
+          <div><div class="lbl" style="color:var(--muted);font-size:10px">RFQ AHORA</div><span style="font-size:22px;font-weight:700">${fmt(spotNow)}</span></div>
+          <div><div class="lbl" style="color:var(--muted);font-size:10px">VENTAJA vs COMPRAR AHORITA</div><span style="font-size:22px;font-weight:700" class="${dReal!=null?cls(dReal):''}">${dReal!=null?(dReal>=0?'+':'')+dReal.toFixed(2)+'¢':'—'}</span></div>
+          <div style="color:var(--muted);font-size:11px">comprados ${fmtUsdt(re.boughtUsdt)} · vendidos ${fmtUsdt(re.soldUsdt)} · hoy ${fmtMxn(re.todayMxn)} (${fmtUsdt(re.todayUsdt)} USDT) · ${re.buysCount} compras</div>
+        </div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:5px">${dReal==null?'':dReal>=0?'✅ El stock real costó MÁS BARATO que el RFQ actual — cada venta lleva ese margen extra.':'⏳ El RFQ bajó respecto a nuestro promedio — las próximas compras promediarán hacia abajo.'}</div>`;
+    } else { $('real-panel').style.display='none'; }
 
     // Tesorería: costo promedio logrado HOY vs el spot del momento (vista de operadores)
     const tre = state.treasury;

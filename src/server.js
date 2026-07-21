@@ -5,7 +5,7 @@ import path from 'node:path';
 import { CONFIG } from './config.js';
 import {
   lastTick, minuteCloses, ohlc, recentSignals, recentTrades, recentNews,
-  performance, dailyPerformance, signalQuality, todayStats, traderPnl, fridayEffect, rfqByHour, treasuryToday,
+  performance, dailyPerformance, signalQuality, todayStats, traderPnl, fridayEffect, rfqByHour, treasuryToday, realTreasury,
   latestAnalysis, recentAnalyses,
 } from './queries.js';
 import { indicatorSnapshot } from './signals.js';
@@ -19,15 +19,15 @@ function json(res, data) {
 }
 
 export async function buildState() {
-  const [bitso, spot, btc, rfq, rfqSell, indicators, today, analyst, scout, treasury] = await Promise.all([
+  const [bitso, spot, btc, rfq, rfqSell, indicators, today, analyst, scout, treasury, real] = await Promise.all([
     lastTick('bitso'), lastTick('spot'), lastTick('btc'), lastTick('rfq'), lastTick('rfq_sell'),
-    indicatorSnapshot(), todayStats(), latestAnalysis('analyst'), latestAnalysis('scout'), treasuryToday(),
+    indicatorSnapshot(), todayStats(), latestAnalysis('analyst'), latestAnalysis('scout'), treasuryToday(), realTreasury(),
   ]);
   const blackout = activeBlackout();
   return {
     now: Date.now(),
     bitso, spot, btc, rfq, rfqSell,
-    treasury,
+    treasury, real,
     premium: bitso && spot ? bitso.price / spot.price - 1 : null,
     // RFQ vs precio público de COMPRA (ask): positivo = nuestro RFQ es más barato que el libro
     rfqEdge: rfq && bitso ? ((bitso.ask || bitso.price) - rfq.price) * 100 : null,
