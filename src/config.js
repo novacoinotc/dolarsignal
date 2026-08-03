@@ -83,7 +83,11 @@ export const CONFIG = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
   SCOUT_MODEL: process.env.SCOUT_MODEL || 'claude-haiku-4-5',   // "el chismoso": revisa todo cada minuto, barato
   ANALYST_MODEL: process.env.ANALYST_MODEL || 'claude-opus-4-8', // toma las decisiones cuando el scout escala
-  SCOUT_POLL_MS: 60_000,            // el scout revisa cada minuto
+  SCOUT_POLL_MS: Number(process.env.SCOUT_POLL_MS || 60_000),  // el scout revisa cada minuto
+  // 2º cerebro Opus con mentalidad momentum: solo alimenta estrategias PAPER
+  // (momentum_opus, pro_ai). Apagado por defecto desde 2026-08-03 para ahorrar
+  // ~50% del gasto de Opus; reactivable con MOMENTUM_BRAIN=on.
+  MOMENTUM_BRAIN: (process.env.MOMENTUM_BRAIN || 'off').toLowerCase(),
   ANALYST_MIN_GAP_MS: 5 * 60_000,   // no llamar a Opus más seguido que esto (salvo urgencia alta)
   ANALYST_MAX_GAP_MS: 30 * 60_000,  // pero al menos cada 30 min hay un análisis fresco de Opus
 

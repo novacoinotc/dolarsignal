@@ -191,13 +191,16 @@ async function agentTick() {
       if (aiTrades.length) {
         console.log(`🤖💰 [${cdmxTime()}] ${aiTrades.length} compras IA (${verdict.stance}) @ ${aiTrades[0].price.toFixed(4)}`);
       }
-      // Segundo cerebro: Opus con mentalidad de momentum (anticipa la subida)
-      try {
-        const mv = await runMomentumAnalyst(ctx);
-        await insertAnalysis({ ts: now, kind: 'momentum', model: CONFIG.ANALYST_MODEL, summary: mv.reason, payload: mv });
-        const mo = await onMomentumOpus(mv, buyPrice());
-        if (mo.length) console.log(`🧠🚀 [${cdmxTime()}] Momentum Opus (${mv.action}) compró @ ${mo[0].price.toFixed(4)}`);
-      } catch (e) { console.error('[momentum-opus]', e.message); }
+      // Segundo cerebro: Opus con mentalidad de momentum (anticipa la subida).
+      // Solo alimenta estrategias paper — apagado por defecto para ahorrar Opus.
+      if (CONFIG.MOMENTUM_BRAIN === 'on') {
+        try {
+          const mv = await runMomentumAnalyst(ctx);
+          await insertAnalysis({ ts: now, kind: 'momentum', model: CONFIG.ANALYST_MODEL, summary: mv.reason, payload: mv });
+          const mo = await onMomentumOpus(mv, buyPrice());
+          if (mo.length) console.log(`🧠🚀 [${cdmxTime()}] Momentum Opus (${mv.action}) compró @ ${mo[0].price.toFixed(4)}`);
+        } catch (e) { console.error('[momentum-opus]', e.message); }
+      }
       if (verdict.stance === 'COMPRAR_AHORA' && verdict.confidence >= 70) {
         await sendAlert(`🤖 Análisis IA: ${verdict.stance} (${verdict.confidence}%)`, verdict.headline + '\n\n' + verdict.reasoning);
       }
