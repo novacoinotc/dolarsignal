@@ -26,7 +26,11 @@ const MAX_FAILS = 3;
 
 let getPublicPrice = () => null;   // inyectado desde index.js (último precio bitso público)
 let alertFn = async () => {};      // inyectado desde index.js (sendAlert)
-let halted = false;
+// Auto-freno con enfriamiento: tras MAX_FAILS fallas seguidas pausa 60 min y REINTENTA
+// solo (antes era permanente hasta reinicio → 5 días congelado en silencio el 3-ago
+// cuando Bitso entró en mantenimiento justo tras reactivar).
+const HALT_COOLDOWN_MS = 60 * 60_000;
+let haltedUntil = 0;
 let consecutiveFails = 0;
 let queue = Promise.resolve();     // cola serial: una conversión a la vez
 let regimeCache = { date: null, strategy: null, prevChg: null };
@@ -83,7 +87,8 @@ export async function activeStrategy(now = Date.now()) {
 // Hook llamado por trader.js tras CADA compra paper. Decide si se espeja en real.
 // Nunca lanza (un error aquí jamás debe romper el paper trading).
 export function onPaperTrade(t) {
-  if (CONFIG.EXEC_MODE === 'off' || halted) return;
+  if (CONFIG.EXEC_MODE === 'off') return;
+  if (Date.now() < haltedUntil) return;   // en enfriamiento tras fallas — reintenta solo al expirar
   if (!t || t.reason === 'sell' || t.strategy === 'trader') return;
   queue = queue.then(() => mirror(t)).catch(err => console.error('[executor]', err.message));
 }
@@ -150,9 +155,11 @@ async function mirror(t) {
     await insertRealTrade(record).catch(() => {});
     console.error(`[executor] falla ${consecutiveFails}/${MAX_FAILS}: ${err.message}`);
     if (consecutiveFails >= MAX_FAILS) {
-      halted = true;   // auto-freno: no vuelve a operar hasta reinicio del worker
-      await alertFn('🛑 EJECUTOR DETENIDO (auto-freno)',
-        `${MAX_FAILS} fallas consecutivas — no se ejecutan más compras reales hasta reiniciar el worker.\nÚltima: ${err.message.slice(0, 180)}`).catch(() => {});
+      haltedUntil = Date.now() + HALT_COOLDOWN_MS;   // pausa 60 min y reintenta solo
+      consecutiveFails = 0;
+      console.log(`🛑 [${cdmxTime()}] Auto-freno: ${MAX_FAILS} fallas seguidas — pausa 60 min y reintento automático`);
+      await alertFn('🛑 Ejecutor en pausa 60 min (auto-freno)',
+        `${MAX_FAILS} fallas consecutivas — reintento automático en 1 hora.\nÚltima: ${err.message.slice(0, 180)}`).catch(() => {});
     }
   }
 }
