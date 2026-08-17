@@ -78,6 +78,9 @@ export const CONFIG = {
   // Estrategia a espejar en real: nombre fijo (ej. 'smart_ai') o 'capitan' (switcher por régimen).
   // Default smart_ai: la líder 3/3 ventanas y mayor $ acumulado del laboratorio (2026-07-18).
   EXEC_STRATEGY: process.env.EXEC_STRATEGY || 'smart_ai',
+  // Ventana de compras REALES: se detiene el viernes a esta hora (CDMX) y reanuda
+  // lunes 00:00 — el RFQ de fin de semana cobra ~+0.6¢ extra (medido en vivo).
+  EXEC_FRIDAY_CUTOFF_HOUR: Number(process.env.EXEC_FRIDAY_CUTOFF_HOUR || 16),
 
   // ── Agente de IA (scout Haiku + analista Opus) ────────────
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',

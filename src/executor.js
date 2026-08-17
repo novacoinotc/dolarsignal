@@ -17,6 +17,7 @@
 // auto-freno tras 3 fallas consecutivas (hasta reinicio manual), alerta de CADA operación.
 import crypto from 'node:crypto';
 import { CONFIG, tradingDate, cdmxTime } from './config.js';
+import { cdmxDow, cdmxMinutes } from './strategies.js';
 import { insertRealTrade, realSpent, prevDayChange } from './queries.js';
 
 const BASE = 'https://api.bitso.com';
@@ -88,7 +89,11 @@ export async function activeStrategy(now = Date.now()) {
 // Nunca lanza (un error aquí jamás debe romper el paper trading).
 export function onPaperTrade(t) {
   if (CONFIG.EXEC_MODE === 'off') return;
-  if (Date.now() < haltedUntil) return;   // en enfriamiento tras fallas — reintenta solo al expirar
+  const now = Date.now();
+  if (now < haltedUntil) return;   // en enfriamiento tras fallas — reintenta solo al expirar
+  // ventana real: sin compras de viernes 16:00 → domingo 24:00 (finde caro; reanuda lunes 00:00)
+  const dow = cdmxDow(now), hr = Math.floor(cdmxMinutes(now) / 60);
+  if (dow === 0 || dow === 6 || (dow === 5 && hr >= CONFIG.EXEC_FRIDAY_CUTOFF_HOUR)) return;
   if (!t || t.reason === 'sell' || t.strategy === 'trader') return;
   queue = queue.then(() => mirror(t)).catch(err => console.error('[executor]', err.message));
 }
