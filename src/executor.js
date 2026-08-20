@@ -100,20 +100,50 @@ export function onPaperTrade(t) {
 
 async function mirror(t) {
   const now = Date.now();
-  const date = tradingDate(now);
   const { strategy } = await activeStrategy(now);
   if (t.strategy !== strategy) return;                       // solo la estrategia activa del día
 
   // escala: la proporción del paper ($25M) aplicada al tope real
   const scale = CONFIG.EXEC_DAILY_CAP_MXN / CONFIG.DAILY_BUDGET_MXN;
-  let mxn = Math.round(t.mxn * scale);
+  await executeReal(Math.round(t.mxn * scale), t.strategy, t.reason);
+}
+
+// PACER de completado: si el día real va atrasado (fallas de Bitso, o el brazo del día
+// ya terminó su paper y sus espejos fallaron), compra el faltante repartido por hora en
+// la recta final (EXEC_PACER_START_HOUR→22h). Garantiza completar el cupo diario igual
+// que las estrategias paper completan el suyo. No interfiere con la estrategia durante
+// el día (solo actúa tarde, cuando ya no viene más volumen del espejo).
+let lastPacerKey = null;
+export function pacerTick(now = Date.now()) {
+  if (CONFIG.EXEC_MODE === 'off' || Date.now() < haltedUntil) return;
+  const dow = cdmxDow(now), hr = Math.floor(cdmxMinutes(now) / 60);
+  if (dow === 0 || dow === 6 || (dow === 5 && hr >= CONFIG.EXEC_FRIDAY_CUTOFF_HOUR)) return;
+  if (hr < CONFIG.EXEC_PACER_START_HOUR || hr >= 22) return;
+  const key = `${tradingDate(now)}:${hr}`;
+  if (key === lastPacerKey) return;                          // una vez por hora
+  lastPacerKey = key;
+  queue = queue.then(async () => {
+    const date = tradingDate(now);
+    const spent = await realSpent(date, CONFIG.EXEC_MODE);
+    const left = CONFIG.EXEC_DAILY_CAP_MXN - spent;
+    if (left < CONFIG.EXEC_MIN_MXN) return;
+    const hoursLeft = 22 - hr;
+    console.log(`⏱️ [${cdmxTime(now)}] Pacer: día atrasado ($${Math.round(spent).toLocaleString('es-MX')} de $${CONFIG.EXEC_DAILY_CAP_MXN.toLocaleString('es-MX')}) — completando`);
+    await executeReal(Math.round(left / hoursLeft), 'pacer', 'pace');
+  }).catch(err => console.error('[executor]', err.message));
+}
+
+async function executeReal(mxnWanted, stratLabel, reason) {
+  const now = Date.now();
+  const date = tradingDate(now);
   const already = await realSpent(date, CONFIG.EXEC_MODE);
   const capLeft = CONFIG.EXEC_DAILY_CAP_MXN - already;       // tope diario DURO (desde DB)
   if (capLeft < CONFIG.EXEC_MIN_MXN) return;                 // día completado
   // Bitso RFQ exige ≥$17,500 por cotización: sube al mínimo las compras chicas
-  mxn = Math.min(Math.max(mxn, CONFIG.EXEC_MIN_MXN), capLeft);
+  const mxn = Math.min(Math.max(mxnWanted, CONFIG.EXEC_MIN_MXN), capLeft);
+  if (mxn < CONFIG.EXEC_MIN_MXN) return;
 
-  const record = { ts: now, date, mode: CONFIG.EXEC_MODE, strategy: t.strategy, reason: t.reason, mxn, price: 0, usdt: 0, quoteId: null, conversionId: null, status: '' };
+  const record = { ts: now, date, mode: CONFIG.EXEC_MODE, strategy: stratLabel, reason, mxn, price: 0, usdt: 0, quoteId: null, conversionId: null, status: '' };
   try {
     // 1) cotización real
     const quote = await bitsoPost(QUOTES, { source: 'mxn', target: 'usdt', source_amount: String(mxn) });
@@ -139,7 +169,7 @@ async function mirror(t) {
       // ensayo: NO convierte — solo audita a qué precio habría comprado
       record.status = 'DRY';
       await insertRealTrade(record);
-      console.log(`🧪 [${cdmxTime()}] ENSAYO compra real: $${mxn.toLocaleString('es-MX')} @ ${price.toFixed(4)} (${t.strategy}/${t.reason}) — no ejecutada`);
+      console.log(`🧪 [${cdmxTime()}] ENSAYO compra real: $${mxn.toLocaleString('es-MX')} @ ${price.toFixed(4)} (${stratLabel}/${reason}) — no ejecutada`);
       consecutiveFails = 0;
       return;
     }
@@ -153,7 +183,7 @@ async function mirror(t) {
     console.log(`💵 [${cdmxTime()}] COMPRA REAL: $${mxn.toLocaleString('es-MX')} @ ${price.toFixed(4)} → ${record.usdt.toFixed(2)} USDT (${conv.status})`);
     await alertFn('💵 Compra REAL ejecutada',
       `$${mxn.toLocaleString('es-MX')} MXN @ ${price.toFixed(4)} → ${record.usdt.toFixed(2)} USDT\n` +
-      `Estrategia: ${t.strategy} (${t.reason}) · Gastado hoy: $${(already + mxn).toLocaleString('es-MX')} de $${CONFIG.EXEC_DAILY_CAP_MXN.toLocaleString('es-MX')}`);
+      `Estrategia: ${stratLabel} (${reason}) · Gastado hoy: $${(already + mxn).toLocaleString('es-MX')} de $${CONFIG.EXEC_DAILY_CAP_MXN.toLocaleString('es-MX')}`);
   } catch (err) {
     consecutiveFails++;
     record.status = `FAILED_${err.message.slice(0, 180)}`;

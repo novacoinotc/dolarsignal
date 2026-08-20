@@ -81,6 +81,8 @@ export const CONFIG = {
   // Ventana de compras REALES: se detiene el viernes a esta hora (CDMX) y reanuda
   // lunes 00:00 — el RFQ de fin de semana cobra ~+0.6¢ extra (medido en vivo).
   EXEC_FRIDAY_CUTOFF_HOUR: Number(process.env.EXEC_FRIDAY_CUTOFF_HOUR || 16),
+  // Hora (CDMX) desde la que el pacer completa el cupo diario si va atrasado (fallas)
+  EXEC_PACER_START_HOUR: Number(process.env.EXEC_PACER_START_HOUR || 18),
 
   // ── Agente de IA (scout Haiku + analista Opus) ────────────
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
