@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DolarSignal — Laboratorio USDT/MXN</title>
+<title>DolarSignal — Arbitraje Cuantitativo USDT/MXN</title>
 <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root {
@@ -60,19 +60,19 @@
 </style>
 </head>
 <body>
-<div><h1>💵 DolarSignal</h1> <span class="sub">· 💵 tesorería real activa · <span id="updated"></span></span></div>
+<div><h1>📐 DolarSignal · Quant Desk</h1> <span class="sub">· arbitraje sistemático USDT/MXN · I+D de estrategias · <span id="updated"></span></span></div>
 
 <div class="banner" id="blackout"></div>
 
 <div class="panel" id="real-panel" style="display:none;border-color:#15803d;background:#071c0e">
-  <h2 style="color:#4ade80">💰 Tesorería REAL — stock de USDT comprados <span class="pill">dinero real</span></h2>
+  <h2 style="color:#4ade80">💼 Mesa de ejecución — posición & costo promedio <span class="pill">ejecución algorítmica</span></h2>
   <div id="real-body"></div>
 </div>
 
 <div class="panel" id="realops-panel" style="display:none;border-color:#15803d">
-  <h2 style="color:#4ade80">📊 Operación real — día a día <span class="pill">vs costo de operadores (TWAP 8-22h)</span></h2>
+  <h2 style="color:#4ade80">📊 P&L de ejecución — día a día <span class="pill">vs benchmark TWAP 8-22h</span></h2>
   <div class="scroll"><table id="realdaily"><thead><tr><th>Fecha</th><th>Comprado</th><th>USDT</th><th>Costo prom.</th><th>Operadores</th><th>Ahorro ¢</th><th>Ahorro $</th></tr></thead><tbody></tbody></table></div>
-  <h2 style="margin-top:10px;color:#4ade80;font-size:12px">💵 Últimas compras reales</h2>
+  <h2 style="margin-top:10px;color:#4ade80;font-size:12px">💵 Fills recientes</h2>
   <div class="feed scroll"><table id="realtrades"><thead><tr><th>Cuándo</th><th>Modo</th><th>Origen</th><th>MXN</th><th>Precio</th><th>Estado</th></tr></thead><tbody></tbody></table></div>
 </div>
 
@@ -104,15 +104,15 @@
 </div>
 
 <details class="panel" style="border-color:#30363d">
-  <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)">🧪 Laboratorio — las 14 estrategias siguen compitiendo en paper (toca para abrir)</summary>
+  <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)">🧪 Laboratorio de estrategias — 14 modelos en simulación paralela sobre mercado real (toca para abrir)</summary>
 
   <div class="panel" id="treasury-panel" style="display:none;border-color:#0e7490;background:#07161c;margin-top:10px">
-    <h2 style="color:#67e8f9">💼 Tesorería paper — costo promedio del día (Híbrido)</h2>
+    <h2 style="color:#67e8f9">💼 MR-1 MeanRev — costo promedio del día (simulación)</h2>
     <div id="treasury-body"></div>
   </div>
 
   <div class="panel" style="margin-top:10px">
-    <h2>🏆 Ranking — ¿cuánto gana cada estrategia? (vs comprar a lo tonto / TWAP)</h2>
+    <h2>🏆 Ranking de estrategias — alpha capturado vs TWAP Benchmark</h2>
     <div class="scroll"><table id="leader" class="leader"><thead><tr>
       <th>#</th><th>Estrategia</th><th>Precio prom.</th><th>¢/USDT</th><th>💰 Ganancia</th><th>USDT</th><th>#señ.</th>
     </tr></thead><tbody></tbody></table></div>
@@ -155,7 +155,7 @@ const cls = n => n==null?'':n>=0?'pos':'neg';
 const cent = n => n==null?'—':(n>=0?'+':'')+n.toFixed(3)+'¢';
 const deltaCell = (o,h)=>{ const x=(o||[]).find(z=>z.horizon_min===h); return x?`<td class="${cls(x.delta_centavos)}">${x.delta_centavos>=0?'+':''}${x.delta_centavos.toFixed(2)}¢</td>`:'<td>—</td>'; };
 const COLORS={ twap:'#8b949e',bot:'#3fb950',aggressive:'#f85149',sessions:'#a371f7',friday:'#d29922',smart:'#58a6ff',trader:'#ff7b72', bot_ai:'#56d364',aggressive_ai:'#ffa198',smart_ai:'#d2a8ff', momentum:'#ff7b00', momentum_opus:'#ff4da6', morning_ai:'#2dd4bf', pro_ai:'#eab308', hybrid:'#22d3ee', tesorero:'#c084fc' };
-const LABELS={ twap:'Pareja',bot:'Cauteloso',aggressive:'Agresivo',sessions:'Sesiones',friday:'Viernes',smart:'Inteligente', bot_ai:'Cauteloso IA',aggressive_ai:'Agresivo IA',smart_ai:'Inteligente IA', momentum:'Momentum regla', momentum_opus:'Momentum Opus', morning_ai:'Mañana IA', pro_ai:'Pro IA', hybrid:'Híbrido', tesorero:'Tesorero' };
+const LABELS={ twap:'TWAP Benchmark',bot:'SYS-Core',aggressive:'SYS-Alpha',sessions:'SYS-Sessions',friday:'SYS-Carry',smart:'SYS-Multifactor', bot_ai:'NEURAL-Core',aggressive_ai:'NEURAL-Alpha',smart_ai:'NEURAL-Multifactor', momentum:'SYS-Momentum', momentum_opus:'NEURAL-Momentum', morning_ai:'NEURAL-Window AM', pro_ai:'NEURAL-Pro', hybrid:'MR-1 MeanRev', tesorero:'RS-1 RegimeSwitch', pacer:'EXEC-Pacer', manual:'Manual' };
 
 // ===== Gráfica: TradingView Lightweight Charts (robusta, velas nativas) =====
 const chartState = { type:'candles', source:'bitso', hours:24, showRfq:true, showSpot:false };

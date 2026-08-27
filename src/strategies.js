@@ -28,35 +28,35 @@ const SESSION_WEIGHT = { europea: 1.3, americana: 1.4, otros: 0.5 };
 //  fridayPreload pre-carga el fin de semana el viernes antes del cutoff
 export const ACCUMULATORS = {
   // ── Mecánicas: disparan compras oportunistas con las señales matemáticas ──
-  twap:        { label: 'Pareja (TWAP)', color: '#8b949e', slotPace: 1.0, signalBuyPct: 0,    strongBuyPct: 0,    sessionAware: false, fridayPreload: false },
-  bot:         { label: 'Cauteloso',     color: '#3fb950', slotPace: 1.0, signalBuyPct: 0.02, strongBuyPct: 0.05, sessionAware: false, fridayPreload: false },
-  aggressive:  { label: 'Agresivo',      color: '#f85149', slotPace: 0.4, signalBuyPct: 0.08, strongBuyPct: 0.20, sessionAware: false, fridayPreload: false },
-  sessions:    { label: 'Sesiones',      color: '#a371f7', slotPace: 0.6, signalBuyPct: 0.05, strongBuyPct: 0.12, sessionAware: true,  fridayPreload: false },
-  friday:      { label: 'Viernes',       color: '#d29922', slotPace: 1.0, signalBuyPct: 0.02, strongBuyPct: 0.05, sessionAware: false, fridayPreload: true  },
-  smart:       { label: 'Inteligente',   color: '#58a6ff', slotPace: 0.4, signalBuyPct: 0.08, strongBuyPct: 0.20, sessionAware: true,  fridayPreload: true  },
+  twap:        { label: 'TWAP Benchmark', color: '#8b949e', slotPace: 1.0, signalBuyPct: 0,    strongBuyPct: 0,    sessionAware: false, fridayPreload: false },
+  bot:         { label: 'SYS-Core',     color: '#3fb950', slotPace: 1.0, signalBuyPct: 0.02, strongBuyPct: 0.05, sessionAware: false, fridayPreload: false },
+  aggressive:  { label: 'SYS-Alpha',      color: '#f85149', slotPace: 0.4, signalBuyPct: 0.08, strongBuyPct: 0.20, sessionAware: false, fridayPreload: false },
+  sessions:    { label: 'SYS-Sessions',      color: '#a371f7', slotPace: 0.6, signalBuyPct: 0.05, strongBuyPct: 0.12, sessionAware: true,  fridayPreload: false },
+  friday:      { label: 'SYS-Carry',       color: '#d29922', slotPace: 1.0, signalBuyPct: 0.02, strongBuyPct: 0.05, sessionAware: false, fridayPreload: true  },
+  smart:       { label: 'SYS-Multifactor',   color: '#58a6ff', slotPace: 0.4, signalBuyPct: 0.08, strongBuyPct: 0.20, sessionAware: true,  fridayPreload: true  },
   // ── Gemelas IA: misma receta de tamaño/timing, pero las compras oportunistas
   //    las dispara el VEREDICTO de Opus (COMPRAR_AHORA/PARCIAL), no las matemáticas.
-  bot_ai:        { label: 'Cauteloso IA',   color: '#56d364', ai: true, slotPace: 1.0, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.02, aiNowPct: 0.05, sessionAware: false, fridayPreload: false },
-  aggressive_ai: { label: 'Agresivo IA',    color: '#ffa198', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.08, aiNowPct: 0.20, sessionAware: false, fridayPreload: false },
-  smart_ai:      { label: 'Inteligente IA', color: '#d2a8ff', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.08, aiNowPct: 0.20, sessionAware: true,  fridayPreload: true  },
+  bot_ai:        { label: 'NEURAL-Core',   color: '#56d364', ai: true, slotPace: 1.0, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.02, aiNowPct: 0.05, sessionAware: false, fridayPreload: false },
+  aggressive_ai: { label: 'NEURAL-Alpha',    color: '#ffa198', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.08, aiNowPct: 0.20, sessionAware: false, fridayPreload: false },
+  smart_ai:      { label: 'NEURAL-Multifactor', color: '#d2a8ff', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0, aiPartialPct: 0.08, aiNowPct: 0.20, sessionAware: true,  fridayPreload: true  },
   // ── Momentum: ANTICIPA la subida. Compra fuerte cuando el precio viene subiendo
   //    (z-score positivo), hay noticia de alto impacto, o BTC se cae (risk-off → dólar↑).
   //    Lo opuesto a comprar el dip. Determinista (igual en vivo y en backtest).
-  momentum:      { label: 'Momentum regla', color: '#ff7b00', momentum: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
+  momentum:      { label: 'SYS-Momentum', color: '#ff7b00', momentum: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
                    momZBuy: 1.0, momZStrong: 2.0, momBuyPct: 0.08, momStrongPct: 0.20, momNews: 4.5, momBtcZ: -1.5,
                    sessionAware: false, fridayPreload: false },
   // Momentum decidido por OPUS (anticipa la subida con criterio de IA, no con regla fija)
-  momentum_opus: { label: 'Momentum Opus', color: '#ff4da6', momentumOpus: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
+  momentum_opus: { label: 'NEURAL-Momentum', color: '#ff4da6', momentumOpus: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
                    momPct: 0.08, momFuertePct: 0.20, sessionAware: false, fridayPreload: false },
   // Ventana MATUTINA: compra todo entre 7am-12pm CDMX (backtest: única ventana robusta
   // en ambas mitades del periodo, con mejor peor-día que la madrugada) + sizing de Opus.
-  morning_ai:    { label: 'Mañana IA', color: '#2dd4bf', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
+  morning_ai:    { label: 'NEURAL-Window AM', color: '#2dd4bf', ai: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
                    aiPartialPct: 0.08, aiNowPct: 0.20, windowStart: 7 * 60, windowEnd: 12 * 60,
                    sessionAware: false, fridayPreload: false },
   // PRO: el destilado del backtest unificado — ventana matutina 7-12h + sizing por el
   // cerebro MOMENTUM de Opus (el único con discriminación real; compra menos a ciegas
   // que el analista). La variante con ventana nocturna salió PEOR: se excluye.
-  pro_ai:        { label: 'Pro IA', color: '#eab308', momentumOpus: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
+  pro_ai:        { label: 'NEURAL-Pro', color: '#eab308', momentumOpus: true, slotPace: 0.4, signalBuyPct: 0, strongBuyPct: 0,
                    momPct: 0.06, momFuertePct: 0.15, windowStart: 7 * 60, windowEnd: 12 * 60,
                    sessionAware: false, fridayPreload: false },
   // HÍBRIDO — la receta ganadora del backtest de 2 años CALIBRADO AL NEGOCIO
@@ -64,13 +64,13 @@ export const ACCUMULATORS = {
   // dips por z horario dentro de 8am-10pm (z<=-1→10%, z<=-2→20%), madrugada SOLO dips
   // fuertes (z<=-2→20%), diferir cuando sube (z>=+1), completar al cierre 10pm.
   // Maneja su propia lógica horaria (onHybridHour); excluida de los slots genéricos.
-  hybrid:        { label: 'Híbrido', color: '#22d3ee', hybrid: true, slotPace: 0, signalBuyPct: 0, strongBuyPct: 0,
+  hybrid:        { label: 'MR-1 MeanRev', color: '#22d3ee', hybrid: true, slotPace: 0, signalBuyPct: 0, strongBuyPct: 0,
                    sessionAware: false, fridayPreload: false },
   // TESORERO — ganador del mega-grid walk-forward de 2 años (train +0.261 / val +0.253 ¢/día).
   // Regla de régimen con el DÍA PREVIO: ayer subió >+5¢ → hoy ritmo parejo estilo operadores
   // (sin heroísmos); ayer bajó <−5¢ → reversión total; plano → reversión a media intensidad.
   // Corre en shadow (paper, RFQ real, viernes/findes incluidos) para validar el backtest.
-  tesorero:      { label: 'Tesorero', color: '#c084fc', tesorero: true, slotPace: 0, signalBuyPct: 0, strongBuyPct: 0,
+  tesorero:      { label: 'RS-1 RegimeSwitch', color: '#c084fc', tesorero: true, slotPace: 0, signalBuyPct: 0, strongBuyPct: 0,
                    sessionAware: false, fridayPreload: false },
 };
 
@@ -99,7 +99,7 @@ export const AI_MIN_CONFIDENCE = 55;
 
 // Configuración del trader (compra barato, toma ganancia al subir).
 export const TRADER = {
-  label: 'Trader', color: '#ff7b72',
+  label: 'MM-1 MarketMaking', color: '#ff7b72',
   buyChunk: 1_000_000, strongBuyChunk: 2_000_000,
   sellChunk: 1_500_000,
   maxPositionMxn: 8_000_000,        // tope de inventario especulativo
